@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     ALLOWED_USER_IDS: str = ""
     TARGET_CHAT_ID: Optional[int] = None
     WEBAPP_URL: Optional[str] = None
+    WEBAPP_SHORT_NAME: Optional[str] = None
     DB_PATH: str = "data/shopping.db"
     TEMP_DIR: str = "/tmp/shopping-list"
     LOG_LEVEL: str = "INFO"
