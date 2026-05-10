@@ -40,7 +40,13 @@ async def cmd_pin(message: Message) -> None:
         await message.answer("Команда работает только в групповом чате.")
         return
     kb = await _keyboard(message)
-    await post_and_pin_welcome(message.bot, message.chat.id, message.chat.type, kb)
+    await post_and_pin_welcome(
+        message.bot,
+        message.chat.id,
+        message.chat.type,
+        kb,
+        message_thread_id=message.message_thread_id,
+    )
 
 
 @router.message(Command("new"))
