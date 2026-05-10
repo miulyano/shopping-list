@@ -4,6 +4,7 @@ from aiogram.types import Message
 
 from bot.db.store import connect
 from bot.handlers._common import open_app_keyboard
+from bot.handlers.membership import post_and_pin_welcome
 from bot.services.shopping import archive_active_list, ensure_active_list, get_state
 
 
@@ -31,6 +32,15 @@ async def cmd_start(message: Message) -> None:
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await cmd_start(message)
+
+
+@router.message(Command("pin"))
+async def cmd_pin(message: Message) -> None:
+    if message.chat.type not in ("group", "supergroup"):
+        await message.answer("Команда работает только в групповом чате.")
+        return
+    kb = await _keyboard(message)
+    await post_and_pin_welcome(message.bot, message.chat.id, message.chat.type, kb)
 
 
 @router.message(Command("new"))

@@ -55,6 +55,7 @@ async def main() -> None:
         BotCommand(command="start", description="Что умеет бот"),
         BotCommand(command="help", description="Помощь"),
         BotCommand(command="new", description="Новый список"),
+        BotCommand(command="pin", description="Запинить пост с кнопкой Mini App (в группе)"),
     ])
 
     if settings.WEBAPP_URL:
