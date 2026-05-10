@@ -4,7 +4,50 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from bot.services.parser import parse_text
+from bot.services.parser import _normalize_qty, parse_text
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        (None, None),
+        ("", None),
+        ("   ", None),
+        ("null", None),
+        ("NULL", None),
+        ("Null", None),
+        ("none", None),
+        ("None", None),
+        ("nan", None),
+        ("-", None),
+        ("—", None),
+        ("–", None),
+        ("  null  ", None),
+        ("1 л", "1 л"),
+        (" 200 г ", "200 г"),
+        ("5 шт", "5 шт"),
+        ("0.5 кг", "0.5 кг"),
+    ],
+)
+def test_normalize_qty(raw, expected):
+    assert _normalize_qty(raw) == expected
+
+
+@pytest.mark.asyncio
+async def test_parse_text_strips_literal_null_string():
+    """GPT sometimes returns the string "null" instead of JSON null — must collapse to None."""
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({"items": [
+            {"name": "Хлеб", "qty": "null"},
+            {"name": "Молоко", "qty": "None"},
+        ]})))]
+    )
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
+    )
+    with patch("bot.services.parser.get_client", return_value=fake_client):
+        result = await parse_text("хлеб, молоко")
+    assert [i.qty for i in result] == [None, None]
 
 
 def _mk_response(items: list[dict]) -> SimpleNamespace:
