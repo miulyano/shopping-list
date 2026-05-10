@@ -1,0 +1,37 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - shopping_tmp:/tmp/shopping-list
+    deploy:
+      resources:
+        limits:
+          memory: 200m
+
+  webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile.webapp
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    networks:
+      - default
+      - caddy_net
+    deploy:
+      resources:
+        limits:
+          memory: 200m
+
+networks:
+  caddy_net:
+    external: true
+
+volumes:
+  shopping_tmp:
