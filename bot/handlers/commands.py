@@ -1,23 +1,18 @@
 from aiogram import Router
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
+from aiogram.types import Message
 
-from bot.config import settings
 from bot.db.store import connect
+from bot.handlers._common import open_app_keyboard
 from bot.services.shopping import archive_active_list, ensure_active_list, get_state
 
 
 router = Router()
 
 
-def _open_app_keyboard() -> InlineKeyboardMarkup | None:
-    if not settings.WEBAPP_URL:
-        return None
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[
-            InlineKeyboardButton(text="🛒 Открыть список", web_app=WebAppInfo(url=settings.WEBAPP_URL)),
-        ]]
-    )
+async def _keyboard(message: Message):
+    me = await message.bot.me()
+    return open_app_keyboard(message.chat.type, me.username)
 
 
 @router.message(Command("start"))
@@ -30,7 +25,7 @@ async def cmd_start(message: Message) -> None:
         "• фото — чек, холодильник, записку\n\n"
         "Я разложу всё в плоский список. Открыть его — кнопкой ниже или через меню."
     )
-    await message.answer(text, reply_markup=_open_app_keyboard())
+    await message.answer(text, reply_markup=await _keyboard(message))
 
 
 @router.message(Command("help"))
@@ -40,15 +35,16 @@ async def cmd_help(message: Message) -> None:
 
 @router.message(Command("new"))
 async def cmd_new(message: Message) -> None:
+    kb = await _keyboard(message)
     async with connect() as db:
         state = await get_state(db)
         if state is not None and state.items:
             await message.answer(
                 f"Уже есть активный список ({len(state.items)} товаров). Закройте его или отметьте всё купленным.",
-                reply_markup=_open_app_keyboard(),
+                reply_markup=kb,
             )
             return
         if state is not None:
             await archive_active_list(db, state.id)
         await ensure_active_list(db)
-    await message.answer("Создан новый список. Присылай товары.", reply_markup=_open_app_keyboard())
+    await message.answer("Создан новый список. Присылай товары.", reply_markup=kb)
