@@ -24,13 +24,21 @@ async def post_and_pin_welcome(
     chat_id: int,
     chat_type: str,
     keyboard: InlineKeyboardMarkup | None,
+    message_thread_id: int | None = None,
 ) -> int:
     """Send the welcome message with the Mini App button and pin it.
 
-    Returns the posted message_id. Pin is best-effort: if the bot lacks
-    `can_pin_messages`, the message stays unpinned and we just log.
+    In forum-style supergroups, pass `message_thread_id` so the message is
+    posted (and therefore pinned) within the caller's topic instead of the
+    General topic. Pin is best-effort: if the bot lacks `can_pin_messages`,
+    the message stays unpinned and we just log.
     """
-    msg = await bot.send_message(chat_id, WELCOME_TEXT, reply_markup=keyboard)
+    msg = await bot.send_message(
+        chat_id,
+        WELCOME_TEXT,
+        reply_markup=keyboard,
+        message_thread_id=message_thread_id,
+    )
     try:
         await bot.pin_chat_message(chat_id, msg.message_id, disable_notification=True)
     except Exception:
