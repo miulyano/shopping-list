@@ -1,6 +1,6 @@
 # shopping-list
 
-[![version](https://img.shields.io/badge/version-0.1.0-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.2.0-blue.svg)](CHANGELOG.md)
 
 Telegram-бот + Mini App для общего списка покупок. Принимает текст, голосовые сообщения и фото — раскладывает в плоский список через OpenAI (Whisper + gpt-4o). Список один и общий для всех whitelisted-пользователей; когда все товары отмечены купленными — уходит в архив, и можно создать новый.
 
@@ -13,6 +13,8 @@ Telegram-бот + Mini App для общего списка покупок. Пр
 - **Архив** — все закрытые списки с датами и составом.
 - **Whitelist** — `ALLOWED_USER_IDS` ограничивает, кто может писать боту и открывать mini-app.
 - **Группа + личка** — бот работает в одном групповом чате (`TARGET_CHAT_ID`) и в DM whitelisted-юзеров. Список общий.
+- **Обратная связь** — на каждое входящее сообщение бот шлёт промежуточный статус («📝 Разбираю…», «📷 Распознаю фото…», «🎙 Слушаю…») и заменяет его финалом «✓ Добавил N товаров». В групповом чате ответы привязаны reply'ем к исходному сообщению.
+- **Mini App из группы** — кнопка «🛒 Открыть список» работает и в DM (через `WebAppInfo`), и в группе (через direct-link `t.me/<bot>/<short_name>`, см. `WEBAPP_SHORT_NAME`). При добавлении бота в группу он автоматически шлёт приветственное сообщение с кнопкой и пинит его.
 
 ## Стек
 
@@ -36,7 +38,8 @@ shopping-list/
 │   │   ├── commands.py         # /start /help /new
 │   │   ├── text.py             # F.text — парсер списка
 │   │   ├── voice.py            # F.voice — Whisper → парсер
-│   │   └── photo.py            # F.photo — gpt-4o vision
+│   │   ├── photo.py            # F.photo — gpt-4o vision
+│   │   └── membership.py       # my_chat_member — приветствие+пин при добавлении в группу
 │   ├── middlewares/auth.py     # whitelist + chat filter
 │   ├── services/
 │   │   ├── openai_client.py    # singleton AsyncOpenAI
@@ -88,12 +91,32 @@ OPENAI_API_KEY=                            # ключ OpenAI
 ALLOWED_USER_IDS=                          # CSV: 12345,67890
 TARGET_CHAT_ID=                            # id группового чата (опционально)
 WEBAPP_URL=https://your-mini-app.example.com
+WEBAPP_SHORT_NAME=                         # short-name Mini App из BotFather (нужен для группового чата)
 DB_PATH=data/shopping.db
 TEMP_DIR=/tmp/shopping-list
 LOG_LEVEL=INFO
 ```
 
 `TARGET_CHAT_ID` — id группового чата (целое со знаком `-`, например `-1001234567890`). Бот игнорирует сообщения из любых других групповых чатов. Если не задан — бот отвечает только на DM whitelisted-юзеров.
+
+### Mini App в групповом чате (`WEBAPP_SHORT_NAME`)
+
+Telegram Bot API запрещает inline-кнопки `web_app` вне приватных чатов — отправка
+сообщения с такой кнопкой в группу падает с ошибкой. Чтобы кнопка «🛒 Открыть список»
+работала в группе, Mini App нужно зарегистрировать как **Direct Link Mini App**:
+
+1. @BotFather → выбрать бота → `/newapp`.
+2. Указать название, описание, иконку и тот же URL, что в `WEBAPP_URL`.
+3. Задать short-name (например, `list`).
+4. В `.env` прописать `WEBAPP_SHORT_NAME=list`, перезапустить бота.
+
+После этого:
+
+- В DM кнопка по-прежнему открывает нативный Mini App (через `web_app=`, по `WEBAPP_URL`).
+- В группе под ответами бота появляется URL-кнопка `https://t.me/<bot_username>/<short_name>` — открывает тот же Mini App, `initData` валидируется так же.
+- При добавлении бота в группу он автоматически постит приветственное сообщение с кнопкой и пинит его (нужно право `can_pin_messages`; без него сообщение остаётся непинованным, бот не падает).
+
+Если `WEBAPP_SHORT_NAME` не задан — в группе кнопка просто не показывается, всё остальное работает.
 
 ## Как развернуть свой
 

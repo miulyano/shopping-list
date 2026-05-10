@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @router.message(F.voice | F.audio)
 async def on_voice(message: Message) -> None:
-    notice = await message.answer("🎙 Слушаю...")
+    notice = await message.reply("🎙 Слушаю...")
 
     voice = message.voice or message.audio
     if voice is None:
@@ -64,7 +64,9 @@ async def on_voice(message: Message) -> None:
 
     async with connect() as db:
         _, names = await add_items(db, parsed, message.from_user.id)
+
+    me = await message.bot.me()
     await notice.edit_text(
         f"📝 «{text}»\n\n{format_added(names, len(names))}",
-        reply_markup=open_app_keyboard(),
+        reply_markup=open_app_keyboard(message.chat.type, me.username),
     )

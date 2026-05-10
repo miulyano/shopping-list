@@ -15,7 +15,7 @@ from aiogram.types import (
 
 from bot.config import settings
 from bot.db.store import init_db
-from bot.handlers import commands, photo, text, voice
+from bot.handlers import commands, membership, photo, text, voice
 from bot.middlewares.auth import AuthMiddleware
 from bot.services.temp_cleanup import run_periodic_temp_cleanup
 
@@ -41,12 +41,15 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher()
-    dp.message.middleware(AuthMiddleware())
+    auth = AuthMiddleware()
+    dp.message.middleware(auth)
+    dp.my_chat_member.middleware(auth)
 
     dp.include_router(commands.router)
     dp.include_router(voice.router)
     dp.include_router(photo.router)
     dp.include_router(text.router)
+    dp.include_router(membership.router)
 
     await bot.set_my_commands([
         BotCommand(command="start", description="Что умеет бот"),

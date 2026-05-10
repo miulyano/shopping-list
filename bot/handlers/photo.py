@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @router.message(F.photo)
 async def on_photo(message: Message) -> None:
-    notice = await message.answer("📷 Распознаю фото...")
+    notice = await message.reply("📷 Распознаю фото...")
 
     if not message.photo:
         return
@@ -47,4 +47,9 @@ async def on_photo(message: Message) -> None:
 
     async with connect() as db:
         _, names = await add_items(db, parsed, message.from_user.id)
-    await notice.edit_text(format_added(names, len(names)), reply_markup=open_app_keyboard())
+
+    me = await message.bot.me()
+    await notice.edit_text(
+        format_added(names, len(names)),
+        reply_markup=open_app_keyboard(message.chat.type, me.username),
+    )
