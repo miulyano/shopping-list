@@ -20,3 +20,19 @@ CREATE TABLE IF NOT EXISTS items (
 
 CREATE INDEX IF NOT EXISTS items_list_idx ON items(list_id, position);
 CREATE INDEX IF NOT EXISTS lists_status_idx ON lists(status);
+
+CREATE TABLE IF NOT EXISTS ingest_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('text','voice','photo')),
+    stage TEXT NOT NULL CHECK (stage IN ('listening','transcribing','parsing','success','error')),
+    title TEXT,
+    sub TEXT,
+    added_json TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    finished_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS ingest_user_active_idx
+    ON ingest_events(user_id, finished_at, updated_at);
