@@ -1,6 +1,6 @@
 # shopping-list
 
-[![version](https://img.shields.io/badge/version-0.3.1-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.3.2-blue.svg)](CHANGELOG.md)
 
 Telegram-бот + Mini App для общего списка покупок. Принимает текст, голосовые сообщения и фото — раскладывает в плоский список через OpenAI (Whisper + gpt-4o). Список один и общий для всех whitelisted-пользователей; когда все товары отмечены купленными — уходит в архив, и можно создать новый.
 
