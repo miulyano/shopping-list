@@ -7,7 +7,7 @@ from bot.services.parser import ParsedItem
 
 
 def open_app_keyboard(chat_type: str, bot_username: str | None) -> InlineKeyboardMarkup | None:
-    """Build the «🛒 Открыть список» keyboard appropriate for the chat type.
+    """Build the «🛒 Список» keyboard appropriate for the chat type.
 
     Telegram restricts inline `web_app` buttons to private chats; sending one
     in a group makes the whole `sendMessage` call fail. In groups we fall back
@@ -18,14 +18,14 @@ def open_app_keyboard(chat_type: str, bot_username: str | None) -> InlineKeyboar
     if chat_type == "private" and settings.WEBAPP_URL:
         return InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
-                text="🛒 Открыть список",
+                text="🛒 Список",
                 web_app=WebAppInfo(url=settings.WEBAPP_URL),
             ),
         ]])
     if bot_username and settings.WEBAPP_SHORT_NAME:
         url = f"https://t.me/{bot_username}/{settings.WEBAPP_SHORT_NAME}"
         return InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="🛒 Открыть список", url=url),
+            InlineKeyboardButton(text="🛒 Список", url=url),
         ]])
     return None
 
