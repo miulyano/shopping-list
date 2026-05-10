@@ -1,6 +1,6 @@
 # shopping-list
 
-[![version](https://img.shields.io/badge/version-0.3.2-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.4.0-blue.svg)](CHANGELOG.md)
 
 Telegram-бот + Mini App для общего списка покупок. Принимает текст, голосовые сообщения и фото — раскладывает в плоский список через OpenAI (Whisper + gpt-4o). Список один и общий для всех whitelisted-пользователей; когда все товары отмечены купленными — уходит в архив, и можно создать новый.
 
@@ -9,8 +9,9 @@ Telegram-бот + Mini App для общего списка покупок. Пр
 - **Текст** — «молоко 1 л, хлеб, яйца 10 шт» → 3 позиции в списке.
 - **Голосовое** — Whisper транскрибирует, парсер выделяет товары.
 - **Фото** — gpt-4o (vision) распознаёт чек, продукты в холодильнике/на полке, рукописные записки.
-- **Mini App** — один активный список, прогресс-бар, чекбоксы, авто-архивирование.
-- **Архив** — все закрытые списки с датами и составом.
+- **Mini App** — один активный список, прогресс-бар, чекбоксы, свайп влево по строке открывает «Изменить» / «Удалить», bottom-sheet редактирует название и количество, авто-архивирование при отметке всех товаров.
+- **Архив** — карточка архивного списка: «Добавить в текущий список» / «Создать новый список» (всё снимается с галочки) или «Удалить список» с подтверждением.
+- **Status banner** — пока бот разбирает текст / голосовое / фото из чата, в Mini App над футером появляется индикатор стадии («Распознаю…», «Извлекаю товары…», «Добавлено N товаров»).
 - **Whitelist** — `ALLOWED_USER_IDS` ограничивает, кто может писать боту и открывать mini-app.
 - **Группа + личка** — бот работает в одном групповом чате (`TARGET_CHAT_ID`) и в DM whitelisted-юзеров. Список общий.
 - **Обратная связь** — на каждое входящее сообщение бот шлёт промежуточный статус («📝 Разбираю…», «📷 Распознаю фото…», «🎙 Слушаю…») и заменяет его финалом «✓ Добавил N товаров». В групповом чате ответы привязаны reply'ем к исходному сообщению.
@@ -48,26 +49,31 @@ shopping-list/
 │   │   ├── vision.py           # image → list[ParsedItem] via gpt-4o
 │   │   ├── ffmpeg_runner.py    # async subprocess
 │   │   ├── media.py            # .ogg → .mp3 16k mono
-│   │   ├── shopping.py         # бизнес-логика (списки, items, архив)
+│   │   ├── shopping.py         # бизнес-логика (списки, items, архив, reuse)
+│   │   ├── ingest_state.py     # прогресс ингеста для Mini App status banner
 │   │   └── temp_cleanup.py     # периодическая чистка TEMP_DIR
 │   └── db/
-│       ├── schema.sql          # lists, items
+│       ├── schema.sql          # lists, items, ingest_events
 │       ├── store.py            # connect, init_db
 │       └── models.py
 ├── webapp/
 │   ├── main.py                 # FastAPI app + lifespan
 │   ├── auth.py                 # initData HMAC verification
-│   ├── api.py                  # /api/state /api/archive /api/items/.../toggle /api/lists/new
+│   ├── api.py                  # /api/state /api/archive[/{id}[/reuse]] /api/items/{id}[/toggle] /api/lists/new
 │   └── static/
 │       ├── index.html          # mini-app shell
 │       └── app.js              # React-приложение (порт Claude Design handoff)
 ├── tests/
 │   ├── conftest.py
 │   ├── test_auth.py
+│   ├── test_keyboard.py
 │   ├── test_parser.py
 │   ├── test_shopping.py
+│   ├── test_shopping_v2.py     # update/delete item, archive reuse/delete
+│   ├── test_ingest_state.py
 │   ├── test_webapp_auth.py
-│   └── test_webapp_api.py
+│   ├── test_webapp_api.py
+│   └── test_webapp_api_v2.py   # PATCH/DELETE items, archive detail/reuse/delete, ingest in /state
 ├── design/                     # оригинальный handoff-zip из Claude Design (не git-tracked в проде)
 ├── data/                       # gitignored: shopping.db
 ├── Dockerfile.bot
@@ -190,10 +196,12 @@ pytest -v
 3. Со второго whitelisted-аккаунта открыть mini-app → видим то же.
 4. На первом отметить «молоко» купленным → через ≤3 сек на втором чекбокс заполнен.
 5. Отметить остальные → бэйдж «Все товары куплены — переношу в архив...» → EmptyState с «Архив · 1».
-6. «Новый список» → app закрывается, мы в чате с ботом.
-7. Голосовое «купи курицу и рис» → транскрибация → 2 товара.
-8. Фото чека → распознаются позиции.
-9. Не-whitelisted user пишет боту → бот молчит.
+6. Свайп влево по строке → видны «Изменить» / «Удалить»; «Изменить» → bottom-sheet → название и количество меняются и сохраняются.
+7. «Удалить» → ConfirmSheet → строка пропадает.
+8. Открыть архив → tap карточку → Archive Detail → «Добавить в текущий / Создать новый список» (товары перетекают как непокупленные) или «Удалить» с подтверждением.
+9. Голосовое «купи курицу и рис» → в Mini App видно баннер «Распознаю голосовое… → Извлекаю товары… → Добавлено N товаров», затем баннер пропадает, позиции в списке.
+10. Фото чека → распознаются позиции, баннер «Анализирую фото… → Извлекаю товары…».
+11. Не-whitelisted user пишет боту → бот молчит.
 
 ## Ветки и коммиты
 

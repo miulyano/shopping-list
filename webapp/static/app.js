@@ -1,6 +1,8 @@
-// Shopping list — Telegram Mini App.
-// Ported from Claude Design handoff (app.jsx). iOS frame, theme-toggle и demo-симулятор
-// убраны, source seed-data заменён на fetch к /api/*. Polling каждые 3 сек, пока вкладка видима.
+// Shopping list — Telegram Mini App (v2 design).
+// Ported from design/handoff app.jsx; iOS frame, theme-toggle и demo-симулятор
+// убраны, source seed-data заменён на fetch к /api/*. Polling каждые 2 сек,
+// пока вкладка видима. Состояние ingest приходит в /api/state и рисует
+// status-баннер над футером.
 
 const { useState, useEffect, useRef } = React;
 
@@ -55,6 +57,15 @@ const fmtDate = (d) => {
   return `${d.getDate()} ${months[d.getMonth()]}`;
 };
 
+function pluralRu(n, forms) {
+  const a = Math.abs(n) % 100;
+  const a1 = a % 10;
+  if (a > 10 && a < 20) return forms[2];
+  if (a1 > 1 && a1 < 5) return forms[1];
+  if (a1 === 1) return forms[0];
+  return forms[2];
+}
+
 // ─── API ─────────────────────────────────────────────────────
 const initData = tg ? tg.initData : '';
 
@@ -74,10 +85,15 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-const fetchState   = ()       => api('/api/state');
-const fetchArchive = ()       => api('/api/archive');
-const toggleItem   = (id)     => api(`/api/items/${id}/toggle`, { method: 'POST' });
-const newList      = ()       => api('/api/lists/new', { method: 'POST' });
+const fetchState        = ()           => api('/api/state');
+const fetchArchive      = ()           => api('/api/archive');
+const fetchArchiveOne   = (id)         => api(`/api/archive/${id}`);
+const reuseArchive      = (id)         => api(`/api/archive/${id}/reuse`, { method: 'POST' });
+const deleteArchive     = (id)         => api(`/api/archive/${id}`, { method: 'DELETE' });
+const toggleItemApi     = (id)         => api(`/api/items/${id}/toggle`, { method: 'POST' });
+const patchItemApi      = (id, body)   => api(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+const deleteItemApi     = (id)         => api(`/api/items/${id}`, { method: 'DELETE' });
+const newListApi        = ()           => api('/api/lists/new', { method: 'POST' });
 
 const closeApp = () => { if (tg) tg.close(); };
 
@@ -135,46 +151,271 @@ const Icon = {
   ),
 };
 
-// ─── checkbox row ────────────────────────────────────────────
-function ItemRow({ item, onToggle, isLast }) {
+// ─── swipeable checkbox row ─────────────────────────────────
+function ItemRow({ item, onToggle, onEdit, onDelete, isLast, openId, setOpenId }) {
+  const ACTION_W = 76;
+  const REVEAL = ACTION_W * 2;
+  const isOpen = openId === item.id;
+  const [drag, setDrag] = useState(0);
+  const startX = useRef(null);
+  const startOffset = useRef(0);
+  const moved = useRef(false);
+
+  const offset = isOpen ? -REVEAL + drag : drag;
+  const clampedOffset = Math.max(-REVEAL - 30, Math.min(0, offset));
+
+  const onPointerDown = (e) => {
+    startX.current = e.clientX;
+    startOffset.current = isOpen ? -REVEAL : 0;
+    moved.current = false;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onPointerMove = (e) => {
+    if (startX.current === null) return;
+    const dx = e.clientX - startX.current;
+    if (Math.abs(dx) > 4) moved.current = true;
+    const next = startOffset.current + dx;
+    setDrag(next - (isOpen ? -REVEAL : 0));
+  };
+  const onPointerUp = () => {
+    if (startX.current === null) return;
+    const dx = drag + (isOpen ? -REVEAL : 0);
+    if (dx < -REVEAL / 2) setOpenId(item.id);
+    else setOpenId(null);
+    setDrag(0);
+    startX.current = null;
+    setTimeout(() => { moved.current = false; }, 50);
+  };
+
+  const handleClick = () => {
+    if (moved.current) return;
+    if (isOpen) { setOpenId(null); return; }
+    onToggle(item.id);
+  };
+
   return (
-    <div
-      onClick={() => onToggle(item.id)}
-      style={{
-        display: 'flex', alignItems: 'center', minHeight: 56,
-        padding: '0 18px', position: 'relative', cursor: 'pointer',
-        userSelect: 'none', WebkitTapHighlightColor: 'transparent',
-      }}
-    >
+    <div style={{ position: 'relative', overflow: 'hidden', background: T.card }}>
       <div style={{
-        width: 24, height: 24, borderRadius: 12, marginRight: 14, flexShrink: 0,
-        background: item.done ? T.accent : 'transparent',
-        border: item.done ? 'none' : `1.6px solid ${T.text3}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        transition: 'all 0.2s ease',
+        position: 'absolute', top: 0, right: 0, bottom: 0,
+        display: 'flex', alignItems: 'stretch',
       }}>
-        {item.done && <Icon.Check />}
+        <button
+          onClick={(e) => { e.stopPropagation(); setOpenId(null); onEdit(item); }}
+          style={{
+            width: ACTION_W, border: 'none', cursor: 'pointer',
+            background: '#FF9500', color: '#fff',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 4,
+            fontFamily: SF, fontSize: 12, fontWeight: 500,
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M3 14.5L13.5 4l3 3L6 17.5H3v-3z" stroke="#fff" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+          </svg>
+          Изменить
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setOpenId(null); onDelete(item); }}
+          style={{
+            width: ACTION_W, border: 'none', cursor: 'pointer',
+            background: T.red, color: '#fff',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 4,
+            fontFamily: SF, fontSize: 12, fontWeight: 500,
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M3.5 6h13" stroke="#fff" strokeWidth="1.6" strokeLinecap="round"/>
+            <path d="M8 6V4h4v2" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M5.5 6l.7 9.5a1.4 1.4 0 001.4 1.3h4.8a1.4 1.4 0 001.4-1.3L14.5 6" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M8.5 9v5M11.5 9v5" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+          Удалить
+        </button>
       </div>
-      <div style={{
-        flex: 1, fontFamily: SF, fontSize: 17, letterSpacing: -0.4,
-        color: item.done ? T.text2 : T.text,
-        textDecoration: item.done ? 'line-through' : 'none',
-        textDecorationColor: T.text2,
-        transition: 'color 0.2s ease',
-      }}>
-        {item.name}
-        {item.qty && (
-          <span style={{ color: T.text2, marginLeft: 8, fontSize: 15 }}>
-            {item.qty}
-          </span>
+
+      <div
+        onClick={handleClick}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        style={{
+          display: 'flex', alignItems: 'center', minHeight: 56,
+          padding: '0 18px', position: 'relative', cursor: 'pointer',
+          userSelect: 'none', WebkitTapHighlightColor: 'transparent',
+          background: T.card,
+          transform: `translateX(${clampedOffset}px)`,
+          transition: startX.current === null ? 'transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+          touchAction: 'pan-y',
+        }}
+      >
+        <div style={{
+          width: 24, height: 24, borderRadius: 12, marginRight: 14, flexShrink: 0,
+          background: item.done ? T.accent : 'transparent',
+          border: item.done ? 'none' : `1.6px solid ${T.text3}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all 0.2s ease',
+        }}>
+          {item.done && <Icon.Check />}
+        </div>
+        <div style={{
+          flex: 1, fontFamily: SF, fontSize: 17, letterSpacing: -0.4,
+          color: item.done ? T.text2 : T.text,
+          textDecoration: item.done ? 'line-through' : 'none',
+          textDecorationColor: T.text2,
+          transition: 'color 0.2s ease',
+        }}>
+          {item.name}
+          {item.qty && (
+            <span style={{ color: T.text2, marginLeft: 8, fontSize: 15 }}>
+              {item.qty}
+            </span>
+          )}
+        </div>
+        {!isLast && (
+          <div style={{
+            position: 'absolute', bottom: 0, left: 56, right: 0,
+            height: 0.5, background: T.sep,
+          }}/>
         )}
       </div>
-      {!isLast && (
+    </div>
+  );
+}
+
+// ─── edit sheet ─────────────────────────────────────────────
+function EditSheet({ item, onClose, onSave }) {
+  const [name, setName] = useState(item?.name || '');
+  const [qty, setQty] = useState(item?.qty || '');
+  if (!item) return null;
+  const save = () => {
+    if (!name.trim()) return;
+    onSave({ ...item, name: name.trim(), qty: qty.trim() || null });
+  };
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 100,
+      display: 'flex', alignItems: 'flex-end',
+      background: 'rgba(0,0,0,0.4)',
+      animation: 'fade 0.2s ease',
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: '100%', background: T.bg,
+        borderTopLeftRadius: 20, borderTopRightRadius: 20,
+        padding: '10px 16px 24px', boxSizing: 'border-box',
+        animation: 'slideUp 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
+      }}>
         <div style={{
-          position: 'absolute', bottom: 0, left: 56, right: 0,
-          height: 0.5, background: T.sep,
+          width: 40, height: 5, borderRadius: 3, background: T.text3,
+          margin: '0 auto 12px',
         }}/>
-      )}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          marginBottom: 14,
+        }}>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', padding: '6px 0',
+            fontFamily: SF, fontSize: 17, color: T.blue, cursor: 'pointer',
+            letterSpacing: -0.4,
+          }}>Отмена</button>
+          <div style={{
+            fontFamily: SF, fontSize: 17, fontWeight: 600, color: T.text,
+            letterSpacing: -0.4,
+          }}>Изменить товар</div>
+          <button onClick={save} style={{
+            background: 'none', border: 'none', padding: '6px 0',
+            fontFamily: SF, fontSize: 17, color: T.blue, cursor: 'pointer',
+            letterSpacing: -0.4, fontWeight: 600,
+          }}>Готово</button>
+        </div>
+
+        <div style={{ background: T.card, borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: `0.5px solid ${T.sep}` }}>
+            <div style={{
+              fontFamily: SF, fontSize: 12, color: T.text2, letterSpacing: -0.08,
+              textTransform: 'uppercase', fontWeight: 500, marginBottom: 4,
+            }}>Название</div>
+            <input
+              autoFocus
+              value={name} onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && save()}
+              placeholder="Например, Молоко"
+              style={{
+                width: '100%', border: 'none', outline: 'none', background: 'transparent',
+                fontFamily: SF, fontSize: 17, color: T.text, letterSpacing: -0.4,
+                padding: 0, boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ padding: '12px 16px' }}>
+            <div style={{
+              fontFamily: SF, fontSize: 12, color: T.text2, letterSpacing: -0.08,
+              textTransform: 'uppercase', fontWeight: 500, marginBottom: 4,
+            }}>Количество</div>
+            <input
+              value={qty} onChange={e => setQty(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && save()}
+              placeholder="1 л · 200 г · 4 шт"
+              style={{
+                width: '100%', border: 'none', outline: 'none', background: 'transparent',
+                fontFamily: SF, fontSize: 17, color: T.text, letterSpacing: -0.4,
+                padding: 0, boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{
+          fontFamily: SF, fontSize: 12, color: T.text3, letterSpacing: -0.08,
+          padding: '8px 12px 0', lineHeight: 1.4,
+        }}>
+          Количество необязательно. Можно указать вес, объём или штуки.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ios-style alert dialog ─────────────────────────────────
+function ConfirmSheet({ title, desc, confirmLabel, onConfirm, onCancel }) {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 100,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '0 38px',
+      background: 'rgba(0,0,0,0.4)', boxSizing: 'border-box',
+      animation: 'fade 0.2s ease',
+    }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 270,
+        background: T.card, borderRadius: 14, overflow: 'hidden',
+        animation: 'alertPop 0.22s cubic-bezier(0.32, 0.72, 0, 1)',
+      }}>
+        <div style={{ padding: '18px 16px 16px', textAlign: 'center' }}>
+          <div style={{
+            fontFamily: SF, fontSize: 17, fontWeight: 600, color: T.text,
+            letterSpacing: -0.4, marginBottom: 4,
+          }}>{title}</div>
+          <div style={{
+            fontFamily: SF, fontSize: 13, color: T.text, letterSpacing: -0.08,
+            lineHeight: 1.35,
+          }}>{desc}</div>
+        </div>
+        <div style={{ display: 'flex', borderTop: `0.5px solid ${T.sep}` }}>
+          <button onClick={onCancel} style={{
+            flex: 1, height: 44, border: 'none', background: 'transparent',
+            color: T.blue, fontFamily: SF, fontSize: 17, fontWeight: 400,
+            letterSpacing: -0.4, cursor: 'pointer',
+            borderRight: `0.5px solid ${T.sep}`,
+          }}>Отмена</button>
+          <button onClick={onConfirm} style={{
+            flex: 1, height: 44, border: 'none', background: 'transparent',
+            color: T.red, fontFamily: SF, fontSize: 17, fontWeight: 600,
+            letterSpacing: -0.4, cursor: 'pointer',
+          }}>{confirmLabel}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -203,6 +444,98 @@ function Progress({ done, total }) {
   );
 }
 
+// ─── status banner ──────────────────────────────────────────
+function StatusBanner({ ingest }) {
+  if (!ingest) return null;
+  const isSuccess = ingest.stage === 'success';
+  const isError = ingest.stage === 'error';
+  const isVoice = ingest.kind === 'voice' && !isSuccess && !isError;
+  const isPhoto = ingest.kind === 'photo' && !isSuccess && !isError;
+  const isParsing = !isSuccess && !isError && !isVoice && !isPhoto;
+  return (
+    <div style={{
+      margin: '0 12px 8px',
+      background: T.card,
+      borderRadius: 14,
+      padding: '12px 14px',
+      display: 'flex', alignItems: 'center', gap: 12,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)',
+      animation: 'slideUp 0.25s ease',
+    }}>
+      {isVoice && <VoiceWave/>}
+      {isPhoto && <PhotoThumb/>}
+      {isParsing && <Spinner/>}
+      {isSuccess && (
+        <div style={{
+          width: 24, height: 24, borderRadius: 12, background: T.accent,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <Icon.Check s={14}/>
+        </div>
+      )}
+      {isError && (
+        <div style={{
+          width: 24, height: 24, borderRadius: 12, background: T.red,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          color: '#fff', fontFamily: SF, fontSize: 14, fontWeight: 700,
+        }}>!</div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: SF, fontSize: 15, fontWeight: 500, color: T.text, letterSpacing: -0.24,
+        }}>{ingest.title}</div>
+        {ingest.sub && (
+          <div style={{
+            fontFamily: SF, fontSize: 13, color: T.text2, letterSpacing: -0.08,
+            marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{ingest.sub}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VoiceWave() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 2, width: 24, height: 24, justifyContent: 'center', flexShrink: 0 }}>
+      {[0, 1, 2, 3].map(i => (
+        <div key={i} style={{
+          width: 3, borderRadius: 1.5, background: T.blue,
+          animation: `wave 0.9s ease-in-out ${i * 0.12}s infinite`,
+        }}/>
+      ))}
+    </div>
+  );
+}
+
+function PhotoThumb() {
+  return (
+    <div style={{
+      width: 32, height: 32, borderRadius: 6, flexShrink: 0,
+      background: 'linear-gradient(135deg, #FFE5B4, #FFA07A)',
+      position: 'relative', overflow: 'hidden',
+    }}>
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
+        animation: 'shimmer 1.4s linear infinite',
+      }}/>
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <div style={{
+      width: 22, height: 22, flexShrink: 0,
+      border: `2px solid ${T.sep}`,
+      borderTopColor: T.blue,
+      borderRadius: '50%',
+      animation: 'spin 0.8s linear infinite',
+    }}/>
+  );
+}
+
 // ─── chat hint (footer) ─────────────────────────────────────
 function ChatHint() {
   return (
@@ -213,16 +546,13 @@ function ChatHint() {
       WebkitBackdropFilter: 'blur(20px) saturate(180%)',
       borderTop: `0.5px solid ${T.sep}`,
     }}>
-      <button
-        onClick={closeApp}
-        style={{
-          width: '100%', height: 50, borderRadius: 14,
-          background: T.card, border: `0.5px solid ${T.sep}`,
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '0 14px', cursor: 'pointer',
-          fontFamily: SF, textAlign: 'left',
-        }}
-      >
+      <button onClick={closeApp} style={{
+        width: '100%', height: 50, borderRadius: 14,
+        background: T.card, border: `0.5px solid ${T.sep}`,
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '0 14px', cursor: 'pointer',
+        fontFamily: SF, textAlign: 'left',
+      }}>
         <div style={{
           width: 28, height: 28, borderRadius: 14,
           background: 'linear-gradient(135deg, #54A9EB, #2A86D5)',
@@ -235,8 +565,7 @@ function ChatHint() {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontSize: 14, fontWeight: 500, color: T.text, letterSpacing: -0.2,
-            lineHeight: 1.2,
+            fontSize: 14, fontWeight: 500, color: T.text, letterSpacing: -0.2, lineHeight: 1.2,
           }}>Откройте чат, чтобы добавить</div>
           <div style={{
             fontSize: 12, color: T.text2, letterSpacing: -0.08, marginTop: 1,
@@ -260,16 +589,8 @@ function StarterScreen({ onOpenChat }) {
       title: 'Текст', desc: 'Молоко, хлеб, яйца',
       tint: 'rgba(0,122,255,0.14)',
     },
-    {
-      icon: <Icon.Mic s={22} c={T.text}/>,
-      title: 'Голосовое', desc: '«Купить курицу и рис»',
-      tint: 'rgba(255,149,0,0.16)',
-    },
-    {
-      icon: <Icon.Camera s={22} c={T.text}/>,
-      title: 'Фото', desc: 'Чек, холодильник, полки в магазине',
-      tint: 'rgba(52,199,89,0.16)',
-    },
+    { icon: <Icon.Mic s={22} c={T.text}/>, title: 'Голосовое', desc: '«Купить курицу и рис»', tint: 'rgba(255,149,0,0.16)' },
+    { icon: <Icon.Camera s={22} c={T.text}/>, title: 'Фото', desc: 'Чек, холодильник, полки в магазине', tint: 'rgba(52,199,89,0.16)' },
   ];
 
   return (
@@ -294,26 +615,18 @@ function StarterScreen({ onOpenChat }) {
             <circle cx="29" cy="33" r="2" fill="#fff"/>
           </svg>
         </div>
-        <div style={{
-          fontFamily: SF, fontSize: 26, fontWeight: 700, letterSpacing: -0.5,
-          color: T.text, textAlign: 'center', marginBottom: 6,
-        }}>Список покупок</div>
-        <div style={{
-          fontFamily: SF, fontSize: 15, color: T.text2, letterSpacing: -0.24,
-          lineHeight: 1.4, textAlign: 'center', maxWidth: 290,
-        }}>Соберу список из ваших сообщений в чате — текста, голосовых и фото.</div>
+        <div style={{ fontFamily: SF, fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: T.text, textAlign: 'center', marginBottom: 6 }}>Список покупок</div>
+        <div style={{ fontFamily: SF, fontSize: 15, color: T.text2, letterSpacing: -0.24, lineHeight: 1.4, textAlign: 'center', maxWidth: 290 }}>
+          Соберу список из ваших сообщений в чате — текста, голосовых и фото.
+        </div>
       </div>
 
       <div style={{ background: T.card, borderRadius: 18, overflow: 'hidden', marginBottom: 14 }}>
         {methods.map((m, i) => (
-          <div key={m.title} style={{
-            display: 'flex', alignItems: 'center', gap: 14,
-            padding: '14px 16px', position: 'relative',
-          }}>
+          <div key={m.title} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', position: 'relative' }}>
             <div style={{
               width: 36, height: 36, borderRadius: 10, background: m.tint,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             }}>{m.icon}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: SF, fontSize: 15, fontWeight: 600, color: T.text, letterSpacing: -0.24 }}>{m.title}</div>
@@ -326,11 +639,7 @@ function StarterScreen({ onOpenChat }) {
         ))}
       </div>
 
-      <div style={{
-        fontFamily: SF, fontSize: 12, color: T.text3,
-        letterSpacing: -0.08, lineHeight: 1.4, textAlign: 'center',
-        padding: '0 8px', marginBottom: 18,
-      }}>
+      <div style={{ fontFamily: SF, fontSize: 12, color: T.text3, letterSpacing: -0.08, lineHeight: 1.4, textAlign: 'center', padding: '0 8px', marginBottom: 18 }}>
         Отмечайте галочкой каждый купленный товар. Когда всё куплено — список уйдёт в архив.
       </div>
 
@@ -369,10 +678,7 @@ function EmptyState({ kind, onCreate, archiveCount, onOpenArchive }) {
       }}>
         {isDone ? <Icon.CheckBig s={42}/> : <Icon.Cart s={42}/>}
       </div>
-      <div style={{
-        fontFamily: SF, fontSize: 22, fontWeight: 600, letterSpacing: -0.4,
-        color: T.text, marginBottom: 6,
-      }}>
+      <div style={{ fontFamily: SF, fontSize: 22, fontWeight: 600, letterSpacing: -0.4, color: T.text, marginBottom: 6 }}>
         {isDone ? 'Все товары куплены' : 'Список покупок пуст'}
       </div>
       <div style={{
@@ -407,16 +713,19 @@ function EmptyState({ kind, onCreate, archiveCount, onOpenArchive }) {
   );
 }
 
-// ─── archive screen ─────────────────────────────────────────
-function ArchiveScreen({ onBack }) {
+// ─── archive list screen ────────────────────────────────────
+function ArchiveScreen({ onBack, onOpen }) {
   const [lists, setLists] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
+
+  const reload = () => {
+    setLoading(true);
     fetchArchive()
       .then(d => setLists(d.lists || []))
       .catch(e => console.error('archive load failed', e))
       .finally(() => setLoading(false));
-  }, []);
+  };
+  useEffect(reload, []);
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -444,49 +753,199 @@ function ArchiveScreen({ onBack }) {
         ) : lists.length === 0 ? (
           <div style={{ padding: 60, textAlign: 'center', color: T.text2, fontFamily: SF, fontSize: 15 }}>Пока нет архивных списков</div>
         ) : lists.map(list => (
-          <div key={list.id} style={{
-            background: T.card, borderRadius: 16, padding: '14px 16px', marginBottom: 10,
+          <button key={list.id} onClick={() => onOpen(list.id)} style={{
+            display: 'block', width: '100%', textAlign: 'left',
+            background: T.card, borderRadius: 16, padding: '14px 16px',
+            marginBottom: 10, border: 'none', cursor: 'pointer', fontFamily: SF,
           }}>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-              marginBottom: 8,
-            }}>
-              <div style={{
-                fontFamily: SF, fontSize: 15, fontWeight: 600, color: T.text, letterSpacing: -0.24,
-              }}>Список от {fmtDate(new Date((list.archived_at || list.created_at) * 1000))}</div>
-              <div style={{
-                fontFamily: SF, fontSize: 13, color: T.accent, letterSpacing: -0.08,
-                display: 'flex', alignItems: 'center', gap: 4,
-              }}>
-                <Icon.Check s={11} c={T.accent}/>
-                {list.items.length} {pluralRu(list.items.length, ['товар','товара','товаров'])}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: T.text, letterSpacing: -0.24 }}>
+                Список от {fmtDate(new Date((list.archived_at || list.created_at) * 1000))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 13, color: T.accent, letterSpacing: -0.08, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Icon.Check s={11} c={T.accent}/>
+                  {list.items.length} {pluralRu(list.items.length, ['товар','товара','товаров'])}
+                </div>
+                <Icon.Chevron s={12} c={T.text3}/>
               </div>
             </div>
             <div style={{
-              fontFamily: SF, fontSize: 14, color: T.text2, letterSpacing: -0.08,
-              lineHeight: 1.45,
+              fontSize: 14, color: T.text2, letterSpacing: -0.08, lineHeight: 1.45,
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
             }}>{list.items.map(i => i.name).join(' · ')}</div>
-          </div>
+          </button>
         ))}
       </div>
     </div>
   );
 }
 
-function pluralRu(n, forms) {
-  const a = Math.abs(n) % 100;
-  const a1 = a % 10;
-  if (a > 10 && a < 20) return forms[2];
-  if (a1 > 1 && a1 < 5) return forms[1];
-  if (a1 === 1) return forms[0];
-  return forms[2];
+// ─── archive detail (one archived list) ─────────────────────
+function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, onAfterDelete }) {
+  const [list, setList] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchArchiveOne(listId)
+      .then(setList)
+      .catch(e => console.error('archive detail failed', e))
+      .finally(() => setLoading(false));
+  }, [listId]);
+
+  if (loading || !list) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.text2, fontFamily: SF }}>
+        {loading ? 'Загрузка...' : 'Список не найден'}
+      </div>
+    );
+  }
+
+  const date = fmtDate(new Date((list.archived_at || list.created_at) * 1000));
+  const reuseLabel = hasActive ? 'Добавить в текущий список' : 'Создать новый список';
+  const reuseSub   = hasActive
+    ? 'Товары прибавятся к активному'
+    : 'Все товары будут отмечены как непокупленные';
+
+  const doReuse = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await reuseArchive(listId);
+      onAfterReuse();
+    } catch (e) {
+      console.error('reuse failed', e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doDelete = async () => {
+    setConfirmDel(false);
+    setBusy(true);
+    try {
+      await deleteArchive(listId);
+      onAfterDelete();
+    } catch (e) {
+      console.error('delete archive failed', e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{
+        padding: '20px 16px 12px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      }}>
+        <button onClick={onBack} style={{
+          height: 36, padding: '0 14px 0 10px', borderRadius: 18,
+          background: T.pillBg, border: 'none', color: T.text,
+          fontFamily: SF, fontSize: 14, fontWeight: 500, letterSpacing: -0.2,
+          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+        }}>
+          <svg width="9" height="14" viewBox="0 0 9 14" fill="none">
+            <path d="M7 1L1 7l6 6" stroke={T.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Архив
+        </button>
+        <button onClick={() => setConfirmDel(true)} style={{
+          width: 36, height: 36, borderRadius: 18,
+          background: T.pillBg, border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M3 5h12" stroke={T.red} strokeWidth="1.6" strokeLinecap="round"/>
+            <path d="M7 5V3.5h4V5" stroke={T.red} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M5 5l.6 9.5a1.4 1.4 0 001.4 1.3h4a1.4 1.4 0 001.4-1.3L13 5" stroke={T.red} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M7.5 8v5M10.5 8v5" stroke={T.red} strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div style={{ padding: '4px 22px 14px' }}>
+        <div style={{
+          fontFamily: SF, fontSize: 13, color: T.text2, letterSpacing: -0.08,
+          textTransform: 'uppercase', fontWeight: 500, marginBottom: 4,
+        }}>Архивный список</div>
+        <div style={{ fontFamily: SF, fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: T.text, lineHeight: 1.15 }}>
+          Список покупок<br/>
+          <span style={{ color: T.text2, fontWeight: 600 }}>от {date}</span>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 16px' }}>
+        <div style={{ background: T.card, borderRadius: 18, overflow: 'hidden' }}>
+          {list.items.map((item, i) => (
+            <div key={item.id} style={{
+              display: 'flex', alignItems: 'center', minHeight: 52,
+              padding: '0 18px', position: 'relative',
+            }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: 11, marginRight: 14, flexShrink: 0,
+                background: T.accent,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Icon.Check s={12}/>
+              </div>
+              <div style={{
+                flex: 1, fontFamily: SF, fontSize: 16, letterSpacing: -0.32,
+                color: T.text2, textDecoration: 'line-through',
+              }}>
+                {item.name}
+                {item.qty && (
+                  <span style={{ color: T.text3, marginLeft: 8, fontSize: 14 }}>{item.qty}</span>
+                )}
+              </div>
+              {i < list.items.length - 1 && (
+                <div style={{ position: 'absolute', bottom: 0, left: 54, right: 0, height: 0.5, background: T.sep }}/>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{
+        padding: '10px 16px 16px',
+        background: T.surfaceBg,
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        borderTop: `0.5px solid ${T.sep}`,
+      }}>
+        <button onClick={doReuse} disabled={busy} style={{
+          width: '100%', height: 52, borderRadius: 14,
+          background: T.text, border: 'none', color: T.inverseFg,
+          fontFamily: SF, fontSize: 17, fontWeight: 600, letterSpacing: -0.4,
+          cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexDirection: 'column', gap: 2,
+        }}>
+          <span>{reuseLabel}</span>
+          <span style={{ fontSize: 12, fontWeight: 400, opacity: 0.6, letterSpacing: -0.08 }}>{reuseSub}</span>
+        </button>
+      </div>
+
+      {confirmDel && (
+        <ConfirmSheet
+          title="Удалить список?"
+          desc={`«Список от ${date}» будет удалён без возможности восстановления.`}
+          confirmLabel="Удалить"
+          onConfirm={doDelete}
+          onCancel={() => setConfirmDel(false)}
+        />
+      )}
+    </div>
+  );
 }
 
 // ─── telegram-style header ──────────────────────────────────
 function TgHeader({ onClose }) {
   return (
     <div style={{
-      paddingTop: 14, paddingBottom: 8,
       background: T.tgHeader,
       borderBottom: `0.5px solid ${T.sep}`,
       display: 'flex', alignItems: 'center', gap: 10,
@@ -495,41 +954,66 @@ function TgHeader({ onClose }) {
       <div style={{
         width: 32, height: 32, borderRadius: 16,
         background: 'linear-gradient(135deg, #34C759, #30B0C7)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 16,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
       }}>🛒</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontFamily: SF, fontSize: 15, fontWeight: 600, color: T.text, letterSpacing: -0.24,
-        }}>Список покупок</div>
-        <div style={{
-          fontFamily: SF, fontSize: 12, color: T.text2, letterSpacing: -0.08,
-        }}>mini app</div>
+        <div style={{ fontFamily: SF, fontSize: 15, fontWeight: 600, color: T.text, letterSpacing: -0.24 }}>Список покупок</div>
+        <div style={{ fontFamily: SF, fontSize: 12, color: T.text2, letterSpacing: -0.08 }}>mini app</div>
       </div>
-      <button onClick={onClose} style={{
-        width: 32, height: 32, borderRadius: 16, background: T.pillBg,
-        border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: 'pointer',
-      }}>
-        <Icon.Close s={14}/>
-      </button>
+      {onClose && (
+        <button onClick={onClose} style={{
+          width: 32, height: 32, borderRadius: 16, background: T.pillBg,
+          border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer',
+        }}>
+          <Icon.Close s={14}/>
+        </button>
+      )}
     </div>
   );
 }
 
 // ─── main app ───────────────────────────────────────────────
 function ShoppingApp() {
-  const [active, setActive] = useState(null);          // {id, created_at, items: []} | null
+  const [active, setActive] = useState(null);
   const [archiveCount, setArchiveCount] = useState(0);
-  const [view, setView] = useState('list');            // 'list' | 'archive'
+  const [ingest, setIngest] = useState(null);
+  const [view, setView] = useState('list'); // 'list' | 'archive' | 'archiveDetail'
+  const [openArchiveId, setOpenArchiveId] = useState(null);
+  const [openId, setOpenId] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [confirmDeleteItem, setConfirmDeleteItem] = useState(null);
   const [archivedFlash, setArchivedFlash] = useState(false);
-  const pollingRef = useRef(null);
+  const lastIngestId = useRef(null);
+  const successHideTimer = useRef(null);
 
   const refresh = async () => {
     try {
       const data = await fetchState();
       setActive(data.active_list);
       setArchiveCount(data.archive_count || 0);
+      setIngest(prev => {
+        const next = data.ingest || null;
+        if (!next) {
+          if (successHideTimer.current) {
+            clearTimeout(successHideTimer.current);
+            successHideTimer.current = null;
+          }
+          return null;
+        }
+        if (next.stage === 'success' && next.id !== lastIngestId.current) {
+          lastIngestId.current = next.id;
+          if (successHideTimer.current) clearTimeout(successHideTimer.current);
+          successHideTimer.current = setTimeout(() => setIngest(null), 2400);
+        } else if (next.stage !== 'success') {
+          lastIngestId.current = next.id;
+          if (successHideTimer.current) {
+            clearTimeout(successHideTimer.current);
+            successHideTimer.current = null;
+          }
+        }
+        return next;
+      });
     } catch (e) {
       console.error('state fetch failed', e);
     }
@@ -537,14 +1021,13 @@ function ShoppingApp() {
 
   useEffect(() => {
     refresh();
-    const tick = () => {
-      if (document.visibilityState === 'visible') refresh();
-    };
-    pollingRef.current = setInterval(tick, 3000);
+    const tick = () => { if (document.visibilityState === 'visible') refresh(); };
+    const id = setInterval(tick, 2000);
     document.addEventListener('visibilitychange', tick);
     return () => {
-      clearInterval(pollingRef.current);
+      clearInterval(id);
       document.removeEventListener('visibilitychange', tick);
+      if (successHideTimer.current) clearTimeout(successHideTimer.current);
     };
   }, []);
 
@@ -554,7 +1037,7 @@ function ShoppingApp() {
       items: prev.items.map(it => it.id === id ? { ...it, done: !it.done } : it),
     } : prev);
     try {
-      const r = await toggleItem(id);
+      const r = await toggleItemApi(id);
       if (r.archived) {
         setArchivedFlash(true);
         setTimeout(() => { setArchivedFlash(false); refresh(); }, 1400);
@@ -565,9 +1048,33 @@ function ShoppingApp() {
     }
   };
 
+  const onSaveEdit = async (updated) => {
+    try {
+      await patchItemApi(updated.id, { name: updated.name, qty: updated.qty });
+      setActive(prev => prev ? {
+        ...prev,
+        items: prev.items.map(it => it.id === updated.id ? { ...it, name: updated.name, qty: updated.qty } : it),
+      } : prev);
+    } catch (e) {
+      console.error('patch failed', e);
+    } finally {
+      setEditing(null);
+    }
+  };
+
+  const onDeleteItem = async (id) => {
+    setActive(prev => prev ? { ...prev, items: prev.items.filter(it => it.id !== id) } : prev);
+    try {
+      await deleteItemApi(id);
+    } catch (e) {
+      console.error('delete failed', e);
+      refresh();
+    }
+  };
+
   const onCreate = async () => {
     try {
-      await newList();
+      await newListApi();
     } catch (e) {
       console.error('new list failed', e);
     }
@@ -579,59 +1086,63 @@ function ShoppingApp() {
   const done = items.filter(i => i.done).length;
   const allDone = total > 0 && done === total;
 
-  if (view === 'archive') {
+  if (view === 'archiveDetail') {
     return (
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg }}>
-        <ArchiveScreen onBack={() => setView('list')}/>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
+        <ArchiveDetailScreen
+          listId={openArchiveId}
+          hasActive={total > 0}
+          onBack={() => setView('archive')}
+          onAfterReuse={() => { setView('list'); refresh(); }}
+          onAfterDelete={() => { setView('archive'); refresh(); }}
+        />
       </div>
     );
   }
 
-  // first launch — нет активного, нет архива
+  if (view === 'archive') {
+    return (
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg }}>
+        <ArchiveScreen
+          onBack={() => setView('list')}
+          onOpen={(id) => { setOpenArchiveId(id); setView('archiveDetail'); }}
+        />
+      </div>
+    );
+  }
+
   if (total === 0 && archiveCount === 0) {
     return (
-      <div style={{
-        height: '100%', display: 'flex', flexDirection: 'column',
-        background: T.bg, position: 'relative',
-      }}>
-        <TgHeader onClose={closeApp}/>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
+        <TgHeader/>
         <StarterScreen onOpenChat={closeApp}/>
       </div>
     );
   }
 
-  // активного списка нет, но архив есть
   if (total === 0) {
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
-        <TgHeader onClose={closeApp}/>
+        <TgHeader/>
         <EmptyState
           kind="done"
           onCreate={onCreate}
           archiveCount={archiveCount}
           onOpenArchive={() => setView('archive')}
         />
+        <StatusBanner ingest={ingest}/>
       </div>
     );
   }
 
   return (
-    <div style={{
-      height: '100%', display: 'flex', flexDirection: 'column',
-      background: T.bg, position: 'relative',
-    }}>
-      <TgHeader onClose={closeApp}/>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
+      <TgHeader/>
 
       <div style={{ padding: '16px 22px 6px' }}>
-        <div style={{
-          fontFamily: SF, fontSize: 13, color: T.text2, letterSpacing: -0.08,
-          textTransform: 'uppercase', fontWeight: 500, marginBottom: 4,
-        }}>Активный список</div>
+        <div style={{ fontFamily: SF, fontSize: 13, color: T.text2, letterSpacing: -0.08, textTransform: 'uppercase', fontWeight: 500, marginBottom: 4 }}>Активный список</div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{
-            fontFamily: SF, fontSize: 26, fontWeight: 700, letterSpacing: -0.5,
-            color: T.text, lineHeight: 1.15,
-          }}>
+          <div style={{ fontFamily: SF, fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: T.text, lineHeight: 1.15 }}>
             Список покупок<br/>
             <span style={{ color: T.text2, fontWeight: 600 }}>от {fmtDate(new Date(active.created_at * 1000))}</span>
           </div>
@@ -662,22 +1173,41 @@ function ShoppingApp() {
               key={item.id}
               item={item}
               onToggle={onToggle}
+              onEdit={(it) => setEditing(it)}
+              onDelete={(it) => setConfirmDeleteItem(it)}
               isLast={i === items.length - 1}
+              openId={openId}
+              setOpenId={setOpenId}
             />
           ))}
         </div>
         {(allDone || archivedFlash) && (
           <div style={{
             textAlign: 'center', padding: '20px 0 8px',
-            fontFamily: SF, fontSize: 15, color: T.accent, fontWeight: 500,
-            letterSpacing: -0.24,
+            fontFamily: SF, fontSize: 15, color: T.accent, fontWeight: 500, letterSpacing: -0.24,
           }}>
             ✓ Все товары куплены — переношу в архив...
           </div>
         )}
       </div>
 
+      <StatusBanner ingest={ingest}/>
       <ChatHint/>
+
+      {editing && <EditSheet item={editing} onClose={() => setEditing(null)} onSave={onSaveEdit}/>}
+      {confirmDeleteItem && (
+        <ConfirmSheet
+          title="Удалить товар?"
+          desc={`«${confirmDeleteItem.name}» будет удалён из списка.`}
+          confirmLabel="Удалить"
+          onConfirm={() => {
+            const id = confirmDeleteItem.id;
+            setConfirmDeleteItem(null);
+            onDeleteItem(id);
+          }}
+          onCancel={() => setConfirmDeleteItem(null)}
+        />
+      )}
     </div>
   );
 }

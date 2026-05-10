@@ -33,11 +33,11 @@ def open_app_keyboard(chat_type: str, bot_username: str | None) -> InlineKeyboar
 def format_added(items: Iterable[ParsedItem] | list[str], count: int) -> str:
     if count == 0:
         return "Не нашёл товаров в сообщении 🤔"
-    word = _plural(count, ("товар", "товара", "товаров"))
+    word = plural_ru(count, ("товар", "товара", "товаров"))
     return f"✓ Добавил {count} {word}"
 
 
-def _plural(n: int, forms: tuple[str, str, str]) -> str:
+def plural_ru(n: int, forms: tuple[str, str, str]) -> str:
     n = abs(n) % 100
     n1 = n % 10
     if 10 < n < 20:
@@ -47,3 +47,11 @@ def _plural(n: int, forms: tuple[str, str, str]) -> str:
     if n1 == 1:
         return forms[0]
     return forms[2]
+
+
+def success_status(names: list[str]) -> tuple[str, str | None]:
+    """Title + sub for the Mini App success banner."""
+    if not names:
+        return ("Ничего не добавлено", None)
+    word = plural_ru(len(names), ("товар", "товара", "товаров"))
+    return (f"Добавлено {len(names)} {word}", ", ".join(names))

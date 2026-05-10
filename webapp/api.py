@@ -1,17 +1,22 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel
 
 from bot.config import settings
 from bot.db.store import connect
+from bot.services import ingest_state
 from bot.services.shopping import (
     archive_count,
+    delete_archive_list,
+    delete_item,
     ensure_active_list,
     get_archive,
+    get_archive_list,
     get_state,
+    reuse_archive_list,
     toggle_item,
+    update_item,
 )
 from webapp.auth import validate_init_data
 
@@ -51,14 +56,33 @@ def _list_to_dict(lst) -> dict:
     }
 
 
+def _ingest_to_dict(ev) -> dict:
+    return {
+        "id": ev.id,
+        "kind": ev.kind,
+        "stage": ev.stage,
+        "title": ev.title,
+        "sub": ev.sub,
+        "added": ev.added,
+        "updated_at": ev.updated_at,
+    }
+
+
+class ItemPatch(BaseModel):
+    name: str
+    qty: str | None = None
+
+
 @router.get("/state")
-async def state(_: int = Depends(current_user)) -> dict:
+async def state(user_id: int = Depends(current_user)) -> dict:
     async with connect() as db:
         active = await get_state(db)
         cnt = await archive_count(db)
+        ev = await ingest_state.get_active(db, user_id)
     return {
         "active_list": _list_to_dict(active) if active else None,
         "archive_count": cnt,
+        "ingest": _ingest_to_dict(ev) if ev else None,
     }
 
 
@@ -69,6 +93,34 @@ async def archive(_: int = Depends(current_user)) -> dict:
     return {"lists": [_list_to_dict(l) for l in lists]}
 
 
+@router.get("/archive/{list_id}")
+async def archive_detail(list_id: int, _: int = Depends(current_user)) -> dict:
+    async with connect() as db:
+        lst = await get_archive_list(db, list_id)
+    if lst is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "archive list not found")
+    return _list_to_dict(lst)
+
+
+@router.post("/archive/{list_id}/reuse")
+async def archive_reuse(list_id: int, user_id: int = Depends(current_user)) -> dict:
+    async with connect() as db:
+        result = await reuse_archive_list(db, list_id, user_id)
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "archive list not found")
+    active_id, added = result
+    return {"list_id": active_id, "added": added}
+
+
+@router.delete("/archive/{list_id}")
+async def archive_delete(list_id: int, _: int = Depends(current_user)) -> dict:
+    async with connect() as db:
+        ok = await delete_archive_list(db, list_id)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "archive list not found")
+    return {"deleted": True}
+
+
 @router.post("/items/{item_id}/toggle")
 async def toggle(item_id: int, user_id: int = Depends(current_user)) -> dict:
     async with connect() as db:
@@ -77,6 +129,29 @@ async def toggle(item_id: int, user_id: int = Depends(current_user)) -> dict:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
     list_id, done, archived = result
     return {"list_id": list_id, "done": done, "archived": archived}
+
+
+@router.patch("/items/{item_id}")
+async def patch_item(
+    item_id: int, payload: ItemPatch, _: int = Depends(current_user)
+) -> dict:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "name is required")
+    async with connect() as db:
+        list_id = await update_item(db, item_id, name, payload.qty)
+    if list_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
+    return {"id": item_id, "list_id": list_id, "name": name, "qty": payload.qty}
+
+
+@router.delete("/items/{item_id}")
+async def remove_item(item_id: int, _: int = Depends(current_user)) -> dict:
+    async with connect() as db:
+        list_id = await delete_item(db, item_id)
+    if list_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
+    return {"id": item_id, "list_id": list_id, "deleted": True}
 
 
 @router.post("/lists/new")
