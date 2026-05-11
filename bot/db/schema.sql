@@ -36,3 +36,8 @@ CREATE TABLE IF NOT EXISTS ingest_events (
 
 CREATE INDEX IF NOT EXISTS ingest_user_active_idx
     ON ingest_events(user_id, finished_at, updated_at);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);

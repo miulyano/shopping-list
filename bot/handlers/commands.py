@@ -2,6 +2,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from bot.db.settings_kv import PINNED_THREAD_ID_KEY, set_setting
 from bot.db.store import connect
 from bot.handlers._common import open_app_keyboard
 from bot.handlers.membership import post_and_pin_welcome
@@ -47,6 +48,10 @@ async def cmd_pin(message: Message) -> None:
         kb,
         message_thread_id=message.message_thread_id,
     )
+    async with connect() as db:
+        await set_setting(
+            db, PINNED_THREAD_ID_KEY, str(message.message_thread_id or 0)
+        )
 
 
 @router.message(Command("new"))
