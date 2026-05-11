@@ -42,3 +42,6 @@ tmp/
 # SQLite + runtime state
 /data/
 
+# Design handoffs — local-only assets
+design/
+
