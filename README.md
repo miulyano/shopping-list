@@ -9,13 +9,13 @@ Telegram-бот + Mini App для общего списка покупок. Пр
 - **Текст** — «молоко 1 л, хлеб, яйца 10 шт» → 3 позиции в списке. Если пользователь ввёл только число без единицы («молоко 1», «яблоки 5»), парсер сам подберёт единицу по контексту продукта (`1 л`, `5 шт`, `500 г`, …).
 - **Голосовое** — Whisper транскрибирует, парсер выделяет товары.
 - **Фото** — gpt-4o (vision) распознаёт чек, продукты в холодильнике/на полке, рукописные записки.
-- **Mini App** — один активный список, прогресс-бар, чекбоксы, свайп влево по строке открывает «Изменить» / «Удалить», bottom-sheet редактирует название и количество, авто-архивирование при отметке всех товаров.
+- **Mini App** — один активный список, прогресс-бар, чекбоксы. Свайп влево по строке открывает «Изменить» / «Удалить», bottom-sheet правит название и количество. Когда все товары отмечены — список автоматически уезжает в архив.
 - **Архив** — карточка архивного списка: «Добавить в текущий список» / «Создать новый список» (всё снимается с галочки) или «Удалить список» с подтверждением.
-- **Status banner** — пока бот разбирает текст / голосовое / фото из чата, в Mini App над футером появляется индикатор стадии («Распознаю…», «Извлекаю товары…», «Добавлено N товаров»).
+- **Status banner** — пока бот разбирает текст / голосовое / фото из чата, в Mini App над футером висит индикатор стадии («Распознаю…», «Извлекаю товары…», «Добавлено N товаров»).
 - **Whitelist** — `ALLOWED_USER_IDS` ограничивает, кто может писать боту и открывать mini-app.
 - **Группа + личка** — бот работает в одном групповом чате (`TARGET_CHAT_ID`) и в DM whitelisted-юзеров. Список общий.
 - **Обратная связь** — на каждое входящее сообщение бот шлёт промежуточный статус («📝 Разбираю…», «📷 Распознаю фото…», «🎙 Слушаю…») и заменяет его финалом «✓ Добавил N товаров». В групповом чате ответы привязаны reply'ем к исходному сообщению.
-- **Mini App из группы** — кнопка «🛒 Открыть список» работает и в DM (через `WebAppInfo`), и в группе (через direct-link `t.me/<bot>/<short_name>`, см. `WEBAPP_SHORT_NAME`). При добавлении бота в группу он автоматически шлёт приветственное сообщение с кнопкой и пинит его.
+- **Mini App из группы** — кнопка «🛒 Список» работает и в DM (через `WebAppInfo`), и в группе (через direct-link `t.me/<bot>/<short_name>`, см. `WEBAPP_SHORT_NAME`). При добавлении бота в группу он автоматически шлёт приветственное сообщение с кнопкой и пинит его. Если автопин не сработал — `/pin` в группе делает то же руками.
 
 ## Стек
 
@@ -36,7 +36,8 @@ shopping-list/
 │   ├── main.py                 # entry, Dispatcher, set_chat_menu_button
 │   ├── config.py               # pydantic Settings
 │   ├── handlers/
-│   │   ├── commands.py         # /start /help /new
+│   │   ├── _common.py          # клавиатура Mini App + format_added/plural_ru/success_status
+│   │   ├── commands.py         # /start /help /new /pin
 │   │   ├── text.py             # F.text — парсер списка
 │   │   ├── voice.py            # F.voice — Whisper → парсер
 │   │   ├── photo.py            # F.photo — gpt-4o vision
@@ -62,19 +63,16 @@ shopping-list/
 │   ├── api.py                  # /api/state /api/archive[/{id}[/reuse]] /api/items/{id}[/toggle] /api/lists/new
 │   └── static/
 │       ├── index.html          # mini-app shell
-│       └── app.js              # React-приложение (порт Claude Design handoff)
+│       └── app.js              # React-приложение mini-app (без build-step)
 ├── tests/
-│   ├── conftest.py
+│   ├── conftest.py             # фикстуры + sign_init_data
 │   ├── test_auth.py
 │   ├── test_keyboard.py
 │   ├── test_parser.py
 │   ├── test_shopping.py
-│   ├── test_shopping_v2.py     # update/delete item, archive reuse/delete
 │   ├── test_ingest_state.py
 │   ├── test_webapp_auth.py
-│   ├── test_webapp_api.py
-│   └── test_webapp_api_v2.py   # PATCH/DELETE items, archive detail/reuse/delete, ingest in /state
-├── design/                     # оригинальный handoff-zip из Claude Design (не git-tracked в проде)
+│   └── test_webapp_api.py
 ├── data/                       # gitignored: shopping.db
 ├── Dockerfile.bot
 ├── Dockerfile.webapp
@@ -108,7 +106,7 @@ LOG_LEVEL=INFO
 ### Mini App в групповом чате (`WEBAPP_SHORT_NAME`)
 
 Telegram Bot API запрещает inline-кнопки `web_app` вне приватных чатов — отправка
-сообщения с такой кнопкой в группу падает с ошибкой. Чтобы кнопка «🛒 Открыть список»
+сообщения с такой кнопкой в группу падает с ошибкой. Чтобы кнопка «🛒 Список»
 работала в группе, Mini App нужно зарегистрировать как **Direct Link Mini App**:
 
 1. @BotFather → выбрать бота → `/newapp`.

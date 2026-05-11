@@ -55,7 +55,7 @@ async def on_photo(message: Message) -> None:
             await ingest_state.finish_success(
                 db, event_id, [], "Ничего не нашёл на фото", None,
             )
-        await notice.edit_text(format_added([], 0))
+        await notice.edit_text(format_added(0))
         return
 
     async with connect() as db:
@@ -66,6 +66,6 @@ async def on_photo(message: Message) -> None:
 
     me = await message.bot.me()
     await notice.edit_text(
-        format_added(names, len(names)),
+        format_added(len(names)),
         reply_markup=open_app_keyboard(message.chat.type, me.username),
     )

@@ -7,7 +7,12 @@ from pathlib import Path
 
 from bot.config import settings
 from bot.services.openai_client import get_client
-from bot.services.parser import JSON_SCHEMA, ParsedItem, _normalize_qty
+from bot.services.parser import (
+    CONTEXT_UNIT_INSTRUCTIONS,
+    JSON_SCHEMA,
+    ParsedItem,
+    normalize_qty,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -21,14 +26,7 @@ SYSTEM_PROMPT = (
     "Игнорируй цены, итоги, скидки, реквизиты магазина. "
     "Не выдумывай товары, которых нет на фото.\n"
     "\n"
-    "Если на фото указано только число без единицы измерения — добавь подходящую "
-    "единицу по контексту самого продукта:\n"
-    "  - жидкости (молоко, вода, сок, кефир, растительное масло, пиво, вино) → л или мл;\n"
-    "  - сыпучие и весовые (мука, сахар, соль, крупа, мясо, рыба, сыр, фарш, овощи на вес) → г или кг;\n"
-    "  - штучные (яблоки, бананы, яйца, хлеб, лимоны, огурцы, помидоры) → шт;\n"
-    "  - упаковки (макароны, печенье, чипсы, йогурт, конфеты в коробке) → уп.\n"
-    "Если на фото явно указана единица — не меняй её. "
-    "Если контекста для выбора единицы недостаточно — оставь число как есть."
+    + CONTEXT_UNIT_INSTRUCTIONS
 )
 
 
@@ -69,5 +67,5 @@ async def parse_image(image_path: str) -> list[ParsedItem]:
         name = (i.get("name") or "").strip()
         if not name:
             continue
-        items.append(ParsedItem(name=name, qty=_normalize_qty(i.get("qty"))))
+        items.append(ParsedItem(name=name, qty=normalize_qty(i.get("qty"))))
     return items
