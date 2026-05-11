@@ -1,6 +1,9 @@
 # shopping-list
 
-[![version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.5.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey" alt="license">
+</p>
 
 Telegram-бот + Mini App для общего списка покупок. Принимает текст, голосовые сообщения и фото — раскладывает в плоский список через OpenAI (Whisper + gpt-4o). Список один и общий для всех whitelisted-пользователей; когда все товары отмечены купленными — уходит в архив, и можно создать новый.
 
@@ -84,6 +87,7 @@ shopping-list/
 ├── .env.example
 ├── VERSION
 ├── CHANGELOG.md
+├── LICENSE
 └── README.md
 ```
 
@@ -150,40 +154,26 @@ uvicorn webapp.main:app --host 0.0.0.0 --port 8000
 ## Тесты
 
 ```bash
-source .venv/bin/activate
-pip install -r requirements-dev.txt
 pytest -v
 ```
 
-Все тесты должны быть зелёные. Если тест упал — чинить **код**, а не тест (см. `CLAUDE.md`).
+## Деплой
 
-## Деплой на VPS
+Telegram Mini App требует HTTPS-домена, под которым будет доступен `webapp`-контейнер.
 
-Хост: `ssh vps`. Ставимся в `/opt/shopping-list`, рядом с `notes-bot` и `life-transcriber`.
-
-1. Смержить PR в `main` (squash merge).
-2. На vps:
+1. На хосте склонировать репо, заполнить `.env`, поднять контейнеры:
    ```bash
-   ssh vps
-   sudo mkdir -p /opt/shopping-list && cd /opt/shopping-list
-   git clone git@github.com:miulyano/shopping-list.git .
-   cp .env.example .env
-   vim .env                                  # заполнить токены и whitelist
+   git clone https://github.com/<owner>/shopping-list.git
+   cd shopping-list
+   cp .env.example .env && vim .env
    docker compose up -d --build
    ```
-3. Добавить блок в `/opt/caddy/Caddyfile` (с бэкапом!):
+2. Перед `shopping-list-webapp-1:8000` поставить любой reverse-proxy с TLS
+   (Caddy / Traefik / Nginx). Проксируется одна точка — корень `/`.
+3. Проверить:
    ```bash
-   ssh vps 'cd /opt/caddy && cp Caddyfile Caddyfile.bak.$(date +%s)'
-   # затем добавить:
-   #   your-mini-app.example.com {
-   #       reverse_proxy shopping-list-webapp-1:8000
-   #   }
-   ssh vps 'cd /opt/caddy && docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile && docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile'
-   ```
-4. Проверить:
-   ```bash
-   ssh vps 'cd /opt/shopping-list && docker compose ps && docker compose logs --tail 30'
-   curl -I https://your-mini-app.example.com/
+   docker compose ps && docker compose logs --tail 30
+   curl -I https://<your-domain>/
    ```
    Контейнеры — `Up`, curl — `200 OK`. В логах бота — `Bot started`.
 
@@ -204,3 +194,9 @@ pytest -v
 ## Ветки и коммиты
 
 См. `CLAUDE.md` — ветки в формате `<type>/<kebab>` (`feat/`, `fix/`, ...), коммиты по [Conventional Commits](https://www.conventionalcommits.org/), мердж только squash, прямые коммиты в `main` запрещены.
+
+## Лицензия
+
+[CC BY-NC 4.0](LICENSE) — Creative Commons Attribution-NonCommercial 4.0 International.
+Использовать, форкать, модифицировать можно; продавать или встраивать в коммерческие
+продукты — нельзя.
