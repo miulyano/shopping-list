@@ -95,7 +95,7 @@ async def on_voice(message: Message) -> None:
             await ingest_state.finish_success(
                 db, event_id, [], "Ничего не добавлено", transcript_preview,
             )
-        await notice.edit_text(f"📝 «{text}»\n\n{format_added([], 0)}")
+        await notice.edit_text(f"📝 «{text}»\n\n{format_added(0)}")
         return
 
     async with connect() as db:
@@ -106,6 +106,6 @@ async def on_voice(message: Message) -> None:
 
     me = await message.bot.me()
     await notice.edit_text(
-        f"📝 «{text}»\n\n{format_added(names, len(names))}",
+        f"📝 «{text}»\n\n{format_added(len(names))}",
         reply_markup=open_app_keyboard(message.chat.type, me.username),
     )

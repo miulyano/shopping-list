@@ -1,5 +1,7 @@
+import hashlib
+import hmac
 import os
-import tempfile
+from urllib.parse import urlencode
 
 os.environ.setdefault("BOT_TOKEN", "test-bot-token")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
@@ -8,6 +10,17 @@ os.environ.setdefault("TARGET_CHAT_ID", "-1001234567890")
 
 import pytest
 import pytest_asyncio
+
+
+def sign_init_data(user_id: int, bot_token: str) -> str:
+    params = {
+        "auth_date": "1700000000",
+        "user": f'{{"id":{user_id},"first_name":"Test"}}',
+    }
+    data_check = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+    secret = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+    h = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+    return urlencode({**params, "hash": h})
 
 
 @pytest.fixture

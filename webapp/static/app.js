@@ -1,8 +1,6 @@
-// Shopping list — Telegram Mini App (v2 design).
-// Ported from design/handoff app.jsx; iOS frame, theme-toggle и demo-симулятор
-// убраны, source seed-data заменён на fetch к /api/*. Polling каждые 2 сек,
-// пока вкладка видима. Состояние ingest приходит в /api/state и рисует
-// status-баннер над футером.
+// Shopping list — Telegram Mini App.
+// Polling /api/state каждые 2 сек, пока вкладка видима. Состояние ingest
+// приходит в том же /api/state и рисует status-баннер над футером.
 
 const { useState, useEffect, useRef } = React;
 

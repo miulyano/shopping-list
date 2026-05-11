@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from bot.services.parser import _normalize_qty, parse_text
+from bot.services.parser import normalize_qty, parse_text
 
 
 @pytest.mark.parametrize(
@@ -30,7 +30,7 @@ from bot.services.parser import _normalize_qty, parse_text
     ],
 )
 def test_normalize_qty(raw, expected):
-    assert _normalize_qty(raw) == expected
+    assert normalize_qty(raw) == expected
 
 
 @pytest.mark.asyncio

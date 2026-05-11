@@ -119,25 +119,31 @@ def _row_to_item(row: aiosqlite.Row) -> Item:
     )
 
 
+async def _load_list_with_items(
+    db: aiosqlite.Connection, list_row: aiosqlite.Row
+) -> ShoppingList:
+    items_cur = await db.execute(
+        "SELECT id, list_id, name, qty, done, added_by, added_at, checked_by, checked_at, position "
+        "FROM items WHERE list_id=? ORDER BY position",
+        (list_row["id"],),
+    )
+    items = [_row_to_item(r) for r in await items_cur.fetchall()]
+    return ShoppingList(
+        id=list_row["id"],
+        status=list_row["status"],
+        created_at=list_row["created_at"],
+        archived_at=list_row["archived_at"],
+        items=items,
+    )
+
+
 async def get_state(db: aiosqlite.Connection) -> Optional[ShoppingList]:
     row = await (await db.execute(
         "SELECT id, status, created_at, archived_at FROM lists WHERE status='active' ORDER BY id DESC LIMIT 1"
     )).fetchone()
     if not row:
         return None
-    items_cur = await db.execute(
-        "SELECT id, list_id, name, qty, done, added_by, added_at, checked_by, checked_at, position "
-        "FROM items WHERE list_id=? ORDER BY position",
-        (row["id"],),
-    )
-    items = [_row_to_item(r) for r in await items_cur.fetchall()]
-    return ShoppingList(
-        id=row["id"],
-        status=row["status"],
-        created_at=row["created_at"],
-        archived_at=row["archived_at"],
-        items=items,
-    )
+    return await _load_list_with_items(db, row)
 
 
 async def get_archive(db: aiosqlite.Connection, limit: int = 50) -> list[ShoppingList]:
@@ -147,19 +153,7 @@ async def get_archive(db: aiosqlite.Connection, limit: int = 50) -> list[Shoppin
         (limit,),
     )
     lists_rows = await cur.fetchall()
-    out: list[ShoppingList] = []
-    for lr in lists_rows:
-        items_cur = await db.execute(
-            "SELECT id, list_id, name, qty, done, added_by, added_at, checked_by, checked_at, position "
-            "FROM items WHERE list_id=? ORDER BY position",
-            (lr["id"],),
-        )
-        items = [_row_to_item(r) for r in await items_cur.fetchall()]
-        out.append(ShoppingList(
-            id=lr["id"], status=lr["status"], created_at=lr["created_at"],
-            archived_at=lr["archived_at"], items=items,
-        ))
-    return out
+    return [await _load_list_with_items(db, lr) for lr in lists_rows]
 
 
 async def archive_count(db: aiosqlite.Connection) -> int:
@@ -212,19 +206,7 @@ async def get_archive_list(
     )).fetchone()
     if not row:
         return None
-    items_cur = await db.execute(
-        "SELECT id, list_id, name, qty, done, added_by, added_at, checked_by, checked_at, position "
-        "FROM items WHERE list_id=? ORDER BY position",
-        (row["id"],),
-    )
-    items = [_row_to_item(r) for r in await items_cur.fetchall()]
-    return ShoppingList(
-        id=row["id"],
-        status=row["status"],
-        created_at=row["created_at"],
-        archived_at=row["archived_at"],
-        items=items,
-    )
+    return await _load_list_with_items(db, row)
 
 
 async def delete_archive_list(db: aiosqlite.Connection, list_id: int) -> bool:

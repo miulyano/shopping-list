@@ -1,9 +1,6 @@
-from typing import Iterable
-
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from bot.config import settings
-from bot.services.parser import ParsedItem
 
 
 def open_app_keyboard(chat_type: str, bot_username: str | None) -> InlineKeyboardMarkup | None:
@@ -30,7 +27,7 @@ def open_app_keyboard(chat_type: str, bot_username: str | None) -> InlineKeyboar
     return None
 
 
-def format_added(items: Iterable[ParsedItem] | list[str], count: int) -> str:
+def format_added(count: int) -> str:
     if count == 0:
         return "Не нашёл товаров в сообщении 🤔"
     word = plural_ru(count, ("товар", "товара", "товаров"))
