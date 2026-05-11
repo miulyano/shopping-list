@@ -16,6 +16,7 @@
 ### Changed
 - Inline-кнопка Mini App переименована «🛒 Открыть список» → «🛒 Список», чтобы совпадать с подписью menu-button.
 - Polling Mini App ускорен с 3 c до 2 c, чтобы статус ингеста обновлялся почти мгновенно.
+- README дополнен: добавлен шаг регистрации домена Mini App в BotFather через `/setdomain`, а также объяснение формата `-100<group_id>` для `TARGET_CHAT_ID` и инструкция как получить ID через `getUpdates`. В `.env.example` добавлены inline-комментарии к `TARGET_CHAT_ID`, `WEBAPP_URL`, `WEBAPP_SHORT_NAME`; реальный домен заменён на плейсхолдер.
 
 ### Fixed
 - `/pin` в forum-style супергруппе теперь публикует и пинит сообщение в том же топике, из которого вызвана команда, а не в General. Прокидывается `message_thread_id` через `post_and_pin_welcome`.
