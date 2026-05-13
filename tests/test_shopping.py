@@ -83,12 +83,40 @@ async def test_toggle_back_unmarks(db):
 
     await toggle_item(db, a_id, user_id=111)
     state2 = await get_state(db)
-    assert state2.items[0].done is True
+    item_a = next(i for i in state2.items if i.id == a_id)
+    assert item_a.done is True
 
     await toggle_item(db, a_id, user_id=111)
     state3 = await get_state(db)
-    assert state3.items[0].done is False
-    assert state3.items[0].checked_by is None
+    item_a = next(i for i in state3.items if i.id == a_id)
+    assert item_a.done is False
+    assert item_a.checked_by is None
+
+
+@pytest.mark.asyncio
+async def test_checked_items_sink_to_bottom(db):
+    await add_items(
+        db,
+        [ParsedItem("A"), ParsedItem("B"), ParsedItem("C")],
+        user_id=111,
+    )
+    state = await get_state(db)
+    a_id, b_id, _c_id = (i.id for i in state.items)
+
+    await toggle_item(db, b_id, user_id=111)
+    state2 = await get_state(db)
+    assert [i.name for i in state2.items] == ["A", "C", "B"]
+    assert [i.done for i in state2.items] == [False, False, True]
+
+    await toggle_item(db, a_id, user_id=111)
+    state3 = await get_state(db)
+    assert [i.name for i in state3.items] == ["C", "A", "B"]
+    assert [i.done for i in state3.items] == [False, True, True]
+
+    await toggle_item(db, a_id, user_id=111)
+    state4 = await get_state(db)
+    assert [i.name for i in state4.items] == ["A", "C", "B"]
+    assert [i.done for i in state4.items] == [False, False, True]
 
 
 @pytest.mark.asyncio
