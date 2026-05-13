@@ -5,7 +5,36 @@
 const { useState, useEffect, useRef } = React;
 
 const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-if (tg) { tg.ready(); tg.expand(); }
+
+const MOBILE_PLATFORMS = new Set(['android', 'android_x', 'ios']);
+
+function isMobileTg(t) {
+  return t && MOBILE_PLATFORMS.has(t.platform);
+}
+
+function atLeast(t, version) {
+  return t && typeof t.isVersionAtLeast === 'function' && t.isVersionAtLeast(version);
+}
+
+function lockMiniApp(t) {
+  if (!t) return;
+  t.ready();
+  t.expand();
+  if (!isMobileTg(t)) return;
+  if (atLeast(t, '7.7') && typeof t.disableVerticalSwipes === 'function') {
+    try { t.disableVerticalSwipes(); } catch (_) {}
+  }
+  if (atLeast(t, '8.0') && typeof t.requestFullscreen === 'function' && !t.isFullscreen) {
+    try { t.requestFullscreen(); } catch (_) {}
+    if (typeof t.onEvent === 'function') {
+      t.onEvent('fullscreenFailed', (e) => {
+        console.warn('[tg] fullscreenFailed', e && e.error);
+      });
+    }
+  }
+}
+
+lockMiniApp(tg);
 
 // ─── tokens ──────────────────────────────────────────────────
 const LIGHT = {
