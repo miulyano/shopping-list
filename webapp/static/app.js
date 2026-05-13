@@ -1062,8 +1062,20 @@ function ShoppingApp() {
     setActive(prev => prev ? {
       ...prev,
       items: prev.items
-        .map(it => it.id === id ? { ...it, done: !it.done } : it)
-        .sort((a, b) => (a.done - b.done) || (a.position - b.position)),
+        .map(it => {
+          if (it.id !== id) return it;
+          const nextDone = !it.done;
+          return {
+            ...it,
+            done: nextDone,
+            checked_at: nextDone ? Math.floor(Date.now() / 1000) : null,
+          };
+        })
+        .sort((a, b) => {
+          if (a.done !== b.done) return (a.done ? 1 : 0) - (b.done ? 1 : 0);
+          if (a.done) return (b.checked_at || 0) - (a.checked_at || 0);
+          return a.position - b.position;
+        }),
     } : prev);
     try {
       const r = await toggleItemApi(id);
