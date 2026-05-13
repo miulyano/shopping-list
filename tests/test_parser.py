@@ -95,6 +95,25 @@ async def test_parse_text_filters_empty_names():
 
 
 @pytest.mark.asyncio
+async def test_parse_text_returns_non_food_items():
+    """Parser must pass through any items the LLM returns — including non-food
+    (household, electronics, hardware). There is no category filter downstream."""
+    response = _mk_response([
+        {"name": "Фольга", "qty": None},
+        {"name": "Батарейки AA", "qty": "4 шт"},
+        {"name": "Наушники", "qty": None},
+        {"name": "Шурупы", "qty": "50 шт"},
+    ])
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
+    )
+    with patch("bot.services.parser.get_client", return_value=fake_client):
+        result = await parse_text("фольга, батарейки 4, наушники, шурупы 50")
+    assert [i.name for i in result] == ["Фольга", "Батарейки AA", "Наушники", "Шурупы"]
+    assert [i.qty for i in result] == [None, "4 шт", None, "50 шт"]
+
+
+@pytest.mark.asyncio
 async def test_parse_text_handles_bad_json():
     bad = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="not json"))])
     fake_client = SimpleNamespace(

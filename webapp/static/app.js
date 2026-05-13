@@ -1061,7 +1061,9 @@ function ShoppingApp() {
   const onToggle = async (id) => {
     setActive(prev => prev ? {
       ...prev,
-      items: prev.items.map(it => it.id === id ? { ...it, done: !it.done } : it),
+      items: prev.items
+        .map(it => it.id === id ? { ...it, done: !it.done } : it)
+        .sort((a, b) => (a.done - b.done) || (a.position - b.position)),
     } : prev);
     try {
       const r = await toggleItemApi(id);

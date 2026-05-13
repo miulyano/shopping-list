@@ -124,7 +124,7 @@ async def _load_list_with_items(
 ) -> ShoppingList:
     items_cur = await db.execute(
         "SELECT id, list_id, name, qty, done, added_by, added_at, checked_by, checked_at, position "
-        "FROM items WHERE list_id=? ORDER BY position",
+        "FROM items WHERE list_id=? ORDER BY done ASC, position ASC",
         (list_row["id"],),
     )
     items = [_row_to_item(r) for r in await items_cur.fetchall()]
