@@ -31,14 +31,38 @@ async def test_add_items_inserts_with_positions(db):
         [ParsedItem("Молоко", "1 л"), ParsedItem("Хлеб", None)],
         user_id=111,
     )
-    assert names == ["Молоко", "Хлеб"]
+    assert names == ["молоко", "хлеб"]
     state = await get_state(db)
     assert state is not None
     assert state.id == list_id
-    assert [i.name for i in state.items] == ["Молоко", "Хлеб"]
+    assert [i.name for i in state.items] == ["молоко", "хлеб"]
     assert state.items[0].position < state.items[1].position
     assert state.items[0].qty == "1 л"
     assert state.items[1].qty is None
+
+
+@pytest.mark.asyncio
+async def test_add_items_lowercases_and_preserves_brands(db):
+    _, names = await add_items(
+        db,
+        [
+            ParsedItem("Молоко Простоквашино 2.5%", "1 л", brands=["Простоквашино"]),
+            ParsedItem("Coca-Cola", None, brands=["Coca-Cola"]),
+        ],
+        user_id=111,
+    )
+    assert names == ["молоко Простоквашино 2.5%", "Coca-Cola"]
+
+
+@pytest.mark.asyncio
+async def test_add_items_idempotent_on_preformatted_names(db):
+    """Re-adding an already-formatted name keeps it byte-identical (defence-in-depth)."""
+    _, names = await add_items(
+        db,
+        [ParsedItem("молоко Простоквашино", None, brands=["Простоквашино"])],
+        user_id=111,
+    )
+    assert names == ["молоко Простоквашино"]
 
 
 @pytest.mark.asyncio
@@ -72,7 +96,7 @@ async def test_archive_only_when_all_done(db):
     assert await archive_count(db) == 1
     archive = await get_archive(db)
     assert len(archive) == 1
-    assert {i.name for i in archive[0].items} == {"A", "B"}
+    assert {i.name for i in archive[0].items} == {"a", "b"}
 
 
 @pytest.mark.asyncio
@@ -105,17 +129,17 @@ async def test_checked_items_sink_to_bottom(db):
 
     await toggle_item(db, b_id, user_id=111)
     state2 = await get_state(db)
-    assert [i.name for i in state2.items] == ["A", "C", "B"]
+    assert [i.name for i in state2.items] == ["a", "c", "b"]
     assert [i.done for i in state2.items] == [False, False, True]
 
     await toggle_item(db, a_id, user_id=111)
     state3 = await get_state(db)
-    assert [i.name for i in state3.items] == ["C", "A", "B"]
+    assert [i.name for i in state3.items] == ["c", "a", "b"]
     assert [i.done for i in state3.items] == [False, True, True]
 
     await toggle_item(db, a_id, user_id=111)
     state4 = await get_state(db)
-    assert [i.name for i in state4.items] == ["A", "C", "B"]
+    assert [i.name for i in state4.items] == ["a", "c", "b"]
     assert [i.done for i in state4.items] == [False, False, True]
 
 
@@ -164,7 +188,7 @@ async def test_delete_item_removes_row(db):
     assert list_id == state.id
 
     state2 = await get_state(db)
-    assert [i.name for i in state2.items] == ["B"]
+    assert [i.name for i in state2.items] == ["b"]
 
 
 @pytest.mark.asyncio
@@ -184,7 +208,7 @@ async def test_get_archive_list_only_archived(db):
 
     lst = await get_archive_list(db, archived_id)
     assert lst is not None
-    assert [i.name for i in lst.items] == ["A"]
+    assert [i.name for i in lst.items] == ["a"]
 
 
 @pytest.mark.asyncio
@@ -234,7 +258,7 @@ async def test_reuse_archive_creates_new_active_with_items_undone(db):
     state2 = await get_state(db)
     assert state2 is not None
     assert state2.id == new_list_id
-    assert [i.name for i in state2.items] == ["Молоко", "Хлеб"]
+    assert [i.name for i in state2.items] == ["молоко", "хлеб"]
     assert all(not i.done for i in state2.items)
     assert state2.items[0].qty == "1 л"
     assert state2.items[0].added_by == 222
@@ -259,7 +283,7 @@ async def test_reuse_archive_appends_to_existing_active(db):
     assert added == 1
 
     state = await get_state(db)
-    assert [i.name for i in state.items] == ["B", "A"]
+    assert [i.name for i in state.items] == ["b", "a"]
 
 
 @pytest.mark.asyncio

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from bot.config import settings
+from bot.services.name_format import format_item_name
 from bot.services.openai_client import get_client
 
 
@@ -37,6 +38,7 @@ def normalize_qty(value: Any) -> Optional[str]:
 class ParsedItem:
     name: str
     qty: Optional[str] = None
+    brands: list[str] = field(default_factory=list)
 
 
 CONTEXT_UNIT_INSTRUCTIONS = (
@@ -97,6 +99,14 @@ SYSTEM_PROMPT = (
     "«кеноа» → «киноа»), — исправь его на правильное название товара. Не исправляй, если "
     "разница неоднозначна или товар в исходной форме сам по себе валиден.\n"
     "\n"
+    "Для каждого товара верни поле `brands` — массив строк с названиями брендов "
+    "или торговых марок, если они есть в названии. Каждый бренд пиши точно в той форме, "
+    "в которой он реально пишется в реальности: `Coca-Cola`, `iPhone`, `AirPods`, "
+    "`Простоквашино`, `Nestlé`, `Lay's`, `Milky Way`. Если бренда нет — пустой массив `[]`. "
+    "Не считай брендом нарицательные слова (`молоко`, `хлеб`, `яблоки`, `сахар`) даже если "
+    "пользователь написал их с заглавной. Каждая строка в `brands` должна реально "
+    "встречаться в поле `name` той же позиции — не придумывай брендов, которых нет в тексте.\n"
+    "\n"
     + CONTEXT_UNIT_INSTRUCTIONS
 )
 
@@ -112,8 +122,12 @@ JSON_SCHEMA = {
                 "properties": {
                     "name": {"type": "string"},
                     "qty": {"type": ["string", "null"]},
+                    "brands": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
                 },
-                "required": ["name", "qty"],
+                "required": ["name", "qty", "brands"],
             },
         }
     },
@@ -148,5 +162,10 @@ async def parse_text(text: str) -> list[ParsedItem]:
         name = (i.get("name") or "").strip()
         if not name:
             continue
-        out.append(ParsedItem(name=name, qty=normalize_qty(i.get("qty"))))
+        brands_raw = i.get("brands") or []
+        brands = [b for b in (str(x).strip() for x in brands_raw) if b]
+        formatted = format_item_name(name, brands)
+        if not formatted:
+            continue
+        out.append(ParsedItem(name=formatted, qty=normalize_qty(i.get("qty")), brands=brands))
     return out

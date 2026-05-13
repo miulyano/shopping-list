@@ -6,6 +6,7 @@ from typing import Iterable, Optional
 import aiosqlite
 
 from bot.db.models import Item, ShoppingList
+from bot.services.name_format import format_item_name
 from bot.services.parser import ParsedItem
 
 
@@ -42,7 +43,7 @@ async def add_items(
     now = int(time.time())
     inserted: list[str] = []
     for it in items:
-        name = it.name.strip()
+        name = format_item_name(it.name, it.brands)
         if not name:
             continue
         await db.execute(
