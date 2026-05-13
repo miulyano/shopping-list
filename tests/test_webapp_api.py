@@ -132,7 +132,7 @@ def test_delete_item_removes_it(client, headers):
     assert r.status_code == 200
 
     state = client.get("/api/state", headers=headers).json()
-    assert [i["name"] for i in state["active_list"]["items"]] == ["B"]
+    assert [i["name"] for i in state["active_list"]["items"]] == ["b"]
 
 
 def test_delete_unknown_item_404(client, headers):
@@ -148,7 +148,7 @@ def test_archive_detail_returns_items(client, headers):
     assert r.status_code == 200
     body = r.json()
     assert body["id"] == archived_id
-    assert [i["name"] for i in body["items"]] == ["A", "B"]
+    assert [i["name"] for i in body["items"]] == ["a", "b"]
 
 
 def test_archive_detail_404_for_active(client, headers):
@@ -170,7 +170,7 @@ def test_reuse_creates_new_active_when_none(client, headers):
 
     state = client.get("/api/state", headers=headers).json()
     items = state["active_list"]["items"]
-    assert [i["name"] for i in items] == ["Молоко", "Хлеб"]
+    assert [i["name"] for i in items] == ["молоко", "хлеб"]
     assert all(not i["done"] for i in items)
 
 

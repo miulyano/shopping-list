@@ -38,8 +38,8 @@ async def test_parse_text_strips_literal_null_string():
     """GPT sometimes returns the string "null" instead of JSON null — must collapse to None."""
     response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({"items": [
-            {"name": "Хлеб", "qty": "null"},
-            {"name": "Молоко", "qty": "None"},
+            {"name": "Хлеб", "qty": "null", "brands": []},
+            {"name": "Молоко", "qty": "None", "brands": []},
         ]})))]
     )
     fake_client = SimpleNamespace(
@@ -67,15 +67,15 @@ async def test_parse_empty_text_short_circuits():
 @pytest.mark.asyncio
 async def test_parse_text_returns_items():
     response = _mk_response([
-        {"name": "Молоко", "qty": "1 л"},
-        {"name": "Хлеб", "qty": None},
+        {"name": "Молоко", "qty": "1 л", "brands": []},
+        {"name": "Хлеб", "qty": None, "brands": []},
     ])
     fake_client = SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
         result = await parse_text("молоко 1 л, хлеб")
-    assert [i.name for i in result] == ["Молоко", "Хлеб"]
+    assert [i.name for i in result] == ["молоко", "хлеб"]
     assert result[0].qty == "1 л"
     assert result[1].qty is None
 
@@ -83,15 +83,15 @@ async def test_parse_text_returns_items():
 @pytest.mark.asyncio
 async def test_parse_text_filters_empty_names():
     response = _mk_response([
-        {"name": "  ", "qty": None},
-        {"name": "Сыр", "qty": "200 г"},
+        {"name": "  ", "qty": None, "brands": []},
+        {"name": "Сыр", "qty": "200 г", "brands": []},
     ])
     fake_client = SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
         result = await parse_text("сыр 200г")
-    assert [i.name for i in result] == ["Сыр"]
+    assert [i.name for i in result] == ["сыр"]
 
 
 @pytest.mark.asyncio
@@ -99,18 +99,39 @@ async def test_parse_text_returns_non_food_items():
     """Parser must pass through any items the LLM returns — including non-food
     (household, electronics, hardware). There is no category filter downstream."""
     response = _mk_response([
-        {"name": "Фольга", "qty": None},
-        {"name": "Батарейки AA", "qty": "4 шт"},
-        {"name": "Наушники", "qty": None},
-        {"name": "Шурупы", "qty": "50 шт"},
+        {"name": "Фольга", "qty": None, "brands": []},
+        {"name": "Батарейки AA", "qty": "4 шт", "brands": []},
+        {"name": "Наушники", "qty": None, "brands": []},
+        {"name": "Шурупы", "qty": "50 шт", "brands": []},
     ])
     fake_client = SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
         result = await parse_text("фольга, батарейки 4, наушники, шурупы 50")
-    assert [i.name for i in result] == ["Фольга", "Батарейки AA", "Наушники", "Шурупы"]
+    assert [i.name for i in result] == ["фольга", "батарейки aa", "наушники", "шурупы"]
     assert [i.qty for i in result] == [None, "4 шт", None, "50 шт"]
+
+
+@pytest.mark.asyncio
+async def test_parse_text_preserves_brand_case():
+    """Brand tokens keep their canonical case; everything else lowercased."""
+    response = _mk_response([
+        {"name": "Молоко Простоквашино 2.5%", "qty": "1 л", "brands": ["Простоквашино"]},
+        {"name": "Coca-Cola", "qty": "2 шт", "brands": ["Coca-Cola"]},
+        {"name": "iPhone 15 Pro", "qty": None, "brands": ["iPhone"]},
+    ])
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
+    )
+    with patch("bot.services.parser.get_client", return_value=fake_client):
+        result = await parse_text("молоко простоквашино, coca-cola 2 шт, iphone")
+    assert [i.name for i in result] == [
+        "молоко Простоквашино 2.5%",
+        "Coca-Cola",
+        "iPhone 15 pro",
+    ]
+    assert [i.brands for i in result] == [["Простоквашино"], ["Coca-Cola"], ["iPhone"]]
 
 
 @pytest.mark.asyncio

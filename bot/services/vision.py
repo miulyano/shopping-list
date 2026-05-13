@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from bot.config import settings
+from bot.services.name_format import format_item_name
 from bot.services.openai_client import get_client
 from bot.services.parser import (
     CONTEXT_UNIT_INSTRUCTIONS,
@@ -25,6 +26,13 @@ SYSTEM_PROMPT = (
     "Если на фото есть количество/вес/объём — положи в qty строкой, иначе qty = null. "
     "Игнорируй цены, итоги, скидки, реквизиты магазина. "
     "Не выдумывай товары, которых нет на фото.\n"
+    "\n"
+    "Для каждого товара верни поле `brands` — массив строк с названиями брендов "
+    "или торговых марок, если они видны на фото или в названии (например, "
+    "`Coca-Cola`, `iPhone`, `Простоквашино`, `Nestlé`). Каждый бренд пиши точно в той "
+    "форме, в которой он реально пишется. Если бренда нет — пустой массив `[]`. "
+    "Не считай брендом нарицательные слова. Каждая строка в `brands` должна реально "
+    "встречаться в поле `name` той же позиции.\n"
     "\n"
     + CONTEXT_UNIT_INSTRUCTIONS
 )
@@ -67,5 +75,10 @@ async def parse_image(image_path: str) -> list[ParsedItem]:
         name = (i.get("name") or "").strip()
         if not name:
             continue
-        items.append(ParsedItem(name=name, qty=normalize_qty(i.get("qty"))))
+        brands_raw = i.get("brands") or []
+        brands = [b for b in (str(x).strip() for x in brands_raw) if b]
+        formatted = format_item_name(name, brands)
+        if not formatted:
+            continue
+        items.append(ParsedItem(name=formatted, qty=normalize_qty(i.get("qty")), brands=brands))
     return items

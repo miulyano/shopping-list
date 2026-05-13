@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.7.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-0.8.0-blue" alt="version">
   <img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey" alt="license">
 </p>
 
@@ -14,6 +14,7 @@ Telegram-бот + Mini App для общего списка покупок. Пр
 ## Что умеет
 
 - 📝 **Текст** — «молоко 1 л, хлеб, яйца 10 шт, фольга, батарейки 4, изолента» → 6 позиций в списке. Парсер распознаёт практически любые товары для дома и семьи: продукты, бытовую химию и расходники (фольга, пергамент, салфетки), гигиену и косметику, бытовую технику и электронику, строительные и ремонтные товары, корм для животных, детские товары, канцелярию и др. Если пользователь ввёл только число без единицы («молоко 1», «яблоки 5», «батарейки 4»), парсер сам подберёт единицу по контексту товара (`1 л`, `5 шт`, `4 шт`, `500 г`, …).
+- ✨ **Авто-форматирование имён** — все названия товаров сохраняются строчными буквами, а токены брендов и торговых марок (`Coca-Cola`, `iPhone`, `Простоквашино`, `Nestlé`, `Lay's`, …) сохраняют свою каноническую капитализацию. Бренды выделяет LLM, финальную форму гарантирует детерминированный пост-процессор — поэтому «Молоко Простоквашино», «молоко простоквашино» и «МОЛОКО ПРОСТОКВАШИНО» дают одно и то же значение в БД: `молоко Простоквашино`.
 - 🎙 **Голосовое** — `gpt-4o-mini-transcribe` (более точный, чем `whisper-1`) транскрибирует, парсер выделяет товары. Биас-словарь `WHISPER_PROMPT` подсказывает редкие слова (семена чиа, киноа, фольга, изолента и т.п.), чтобы они не путались с похожими по звучанию.
 - 📷 **Фото** — gpt-4o (vision) распознаёт чек, продукты в холодильнике/на полке, рукописные записки.
 - 📲 **Mini App** — один активный список, прогресс-бар, чекбоксы. Свайп влево по строке открывает «Изменить» / «Удалить», bottom-sheet правит название и количество. Отмеченные товары автоматически уезжают вниз списка, неотмеченные остаются сверху. Когда все товары отмечены — список автоматически уезжает в архив. На мобилках открывается в fullscreen и не сворачивается случайным вертикальным свайпом.
@@ -58,7 +59,8 @@ shopping-list/
 │   ├── middlewares/auth.py     # whitelist + chat filter + topic filter (pinned_thread_id)
 │   ├── services/
 │   │   ├── openai_client.py    # singleton AsyncOpenAI
-│   │   ├── parser.py           # text → list[ParsedItem]
+│   │   ├── parser.py           # text → list[ParsedItem] (с распознаванием брендов)
+│   │   ├── name_format.py      # lowercase + canonical brand capitalization
 │   │   ├── transcriber.py      # voice → text via Whisper
 │   │   ├── vision.py           # image → list[ParsedItem] via gpt-4o
 │   │   ├── ffmpeg_runner.py    # async subprocess
@@ -82,11 +84,14 @@ shopping-list/
 │   ├── conftest.py             # фикстуры + sign_init_data
 │   ├── test_auth.py
 │   ├── test_keyboard.py
+│   ├── test_name_format.py
 │   ├── test_parser.py
 │   ├── test_shopping.py
 │   ├── test_ingest_state.py
 │   ├── test_webapp_auth.py
 │   └── test_webapp_api.py
+├── scripts/
+│   └── normalize_existing_items.py   # одноразовая миграция имён под новый формат
 ├── assets/
 │   └── cover.png               # обложка README
 ├── data/                       # gitignored: shopping.db
