@@ -144,6 +144,28 @@ async def test_checked_items_sink_to_bottom(db):
 
 
 @pytest.mark.asyncio
+async def test_recently_checked_goes_to_top_of_checked_block(db, monkeypatch):
+    await add_items(
+        db,
+        [ParsedItem("A"), ParsedItem("B"), ParsedItem("C")],
+        user_id=111,
+    )
+    state = await get_state(db)
+    a_id, b_id, _c_id = (i.id for i in state.items)
+
+    import bot.services.shopping as svc
+
+    monkeypatch.setattr(svc.time, "time", lambda: 1000.0)
+    await toggle_item(db, a_id, user_id=111)
+    monkeypatch.setattr(svc.time, "time", lambda: 2000.0)
+    await toggle_item(db, b_id, user_id=111)
+
+    state2 = await get_state(db)
+    assert [i.name for i in state2.items] == ["c", "b", "a"]
+    assert [i.done for i in state2.items] == [False, True, True]
+
+
+@pytest.mark.asyncio
 async def test_toggle_unknown_item_returns_none(db):
     result = await toggle_item(db, 9999, user_id=111)
     assert result is None
