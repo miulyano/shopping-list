@@ -135,6 +135,38 @@ async def test_parse_text_preserves_brand_case():
 
 
 @pytest.mark.asyncio
+async def test_parse_text_dedupes_exact_duplicates():
+    """LLM иногда возвращает одну позицию несколько раз — схлопываем."""
+    response = _mk_response([
+        {"name": "Яблоки", "qty": None, "brands": []},
+        {"name": "Бананы", "qty": None, "brands": []},
+        {"name": "Яблоки", "qty": None, "brands": []},
+        {"name": "Бананы", "qty": None, "brands": []},
+    ])
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
+    )
+    with patch("bot.services.parser.get_client", return_value=fake_client):
+        result = await parse_text("Яблоки бананы")
+    assert [i.name for i in result] == ["яблоки", "бананы"]
+
+
+@pytest.mark.asyncio
+async def test_parse_text_keeps_same_name_different_qty():
+    """Одно имя + разный qty — это две легитимные позиции, не дубль."""
+    response = _mk_response([
+        {"name": "Молоко", "qty": "1 л", "brands": []},
+        {"name": "Молоко", "qty": "2 л", "brands": []},
+    ])
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
+    )
+    with patch("bot.services.parser.get_client", return_value=fake_client):
+        result = await parse_text("молоко 1л, молоко 2л")
+    assert [(i.name, i.qty) for i in result] == [("молоко", "1 л"), ("молоко", "2 л")]
+
+
+@pytest.mark.asyncio
 async def test_parse_text_handles_bad_json():
     bad = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="not json"))])
     fake_client = SimpleNamespace(
