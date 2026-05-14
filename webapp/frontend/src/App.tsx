@@ -9,9 +9,17 @@ import {
   fetchState,
   newListApi,
   patchItemApi,
-  toggleItemApi,
+  setItemDoneApi,
 } from './api/client';
 import type { ApiIngest, ApiItem, ApiList } from './types';
+
+function sortItems(items: ApiItem[]): ApiItem[] {
+  return [...items].sort((a, b) => {
+    if (a.done !== b.done) return (a.done ? 1 : 0) - (b.done ? 1 : 0);
+    if (a.done) return (b.checked_at || 0) - (a.checked_at || 0);
+    return a.position - b.position;
+  });
+}
 import { ItemRow } from './components/ItemRow';
 import { EditSheet } from './components/EditSheet';
 import { ConfirmSheet } from './components/ConfirmSheet';
@@ -31,6 +39,11 @@ export function App() {
   useTheme();
 
   const [active, setActive] = useState<ApiList | null>(null);
+  // Synchronous mirror of `active` so onToggle can read the current done value
+  // without waiting for the next render. React's setState updaters run lazily
+  // (and may re-run in concurrent mode), so side effects derived from them
+  // are unsafe — we keep a ref instead.
+  const activeRef = useRef<ApiList | null>(null);
   const [archiveCount, setArchiveCount] = useState(0);
   const [ingest, setIngest] = useState<ApiIngest | null>(null);
   const [view, setView] = useState<View>('list');
@@ -41,11 +54,30 @@ export function App() {
   const [archivedFlash, setArchivedFlash] = useState(false);
   const lastIngestId = useRef<number | null>(null);
   const successHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Items currently in flight to /state — refresh() must not overwrite their
+  // optimistic done/checked_at with stale server values until the toggle
+  // request and its echo settle.
+  const pendingItems = useRef<Set<number>>(new Set());
+  // Latest desired done per item id while a request is in flight. The worker
+  // drains this map to coalesce rapid taps into at most one extra request.
+  const desiredDone = useRef<Map<number, boolean>>(new Map());
 
   const refresh = async () => {
     try {
       const data = await fetchState();
-      setActive(data.active_list);
+      setActive((prev) => {
+        const next = data.active_list;
+        if (!next) return next;
+        if (!prev || pendingItems.current.size === 0) return next;
+        const merged = next.items.map((srv) => {
+          if (!pendingItems.current.has(srv.id)) return srv;
+          const local = prev.items.find((i) => i.id === srv.id);
+          return local
+            ? { ...srv, done: local.done, checked_at: local.checked_at }
+            : srv;
+        });
+        return { ...next, items: sortItems(merged) };
+      });
       setArchiveCount(data.archive_count || 0);
       setIngest((prev) => {
         void prev;
@@ -76,6 +108,10 @@ export function App() {
   };
 
   useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
     refresh();
     const tick = () => {
       if (document.visibilityState === 'visible') refresh();
@@ -90,36 +126,69 @@ export function App() {
   }, []);
 
   const onToggle = async (id: number) => {
-    setActive((prev) => prev ? {
-      ...prev,
-      items: prev.items
-        .map((it) => {
-          if (it.id !== id) return it;
-          const nextDone = !it.done;
-          return {
-            ...it,
-            done: nextDone,
-            checked_at: nextDone ? Math.floor(Date.now() / 1000) : null,
-          };
-        })
-        .sort((a, b) => {
-          if (a.done !== b.done) return (a.done ? 1 : 0) - (b.done ? 1 : 0);
-          if (a.done) return (b.checked_at || 0) - (a.checked_at || 0);
-          return a.position - b.position;
-        }),
-    } : prev);
+    const cur = activeRef.current?.items.find((it) => it.id === id);
+    if (!cur) return;
+    const target = !cur.done;
+    const nextActive = activeRef.current
+      ? {
+          ...activeRef.current,
+          items: sortItems(
+            activeRef.current.items.map((it) =>
+              it.id === id
+                ? {
+                    ...it,
+                    done: target,
+                    checked_at: target ? Math.floor(Date.now() / 1000) : null,
+                  }
+                : it,
+            ),
+          ),
+        }
+      : activeRef.current;
+    activeRef.current = nextActive;
+    setActive(nextActive);
+    desiredDone.current.set(id, target);
+    // Already a worker draining for this id — it will pick up the new desired.
+    if (pendingItems.current.has(id)) return;
+
+    pendingItems.current.add(id);
     try {
-      const r = await toggleItemApi(id);
-      if (r.archived) {
-        setArchivedFlash(true);
-        setTimeout(() => {
-          setArchivedFlash(false);
-          refresh();
-        }, 1400);
+      while (desiredDone.current.has(id)) {
+        const target = desiredDone.current.get(id)!;
+        desiredDone.current.delete(id);
+        const r = await setItemDoneApi(id, target);
+        // Apply server-confirmed done to the row only when there is no newer
+        // desired state queued — otherwise the next loop iteration will send
+        // another request and we would briefly flicker to a stale value.
+        if (!desiredDone.current.has(id)) {
+          setActive((prev) => {
+            if (!prev) return prev;
+            const items = prev.items.map((it) => {
+              if (it.id !== id) return it;
+              if (it.done === r.done) return it;
+              return {
+                ...it,
+                done: r.done,
+                checked_at: r.done ? Math.floor(Date.now() / 1000) : null,
+              };
+            });
+            return { ...prev, items: sortItems(items) };
+          });
+        }
+        if (r.archived) {
+          setArchivedFlash(true);
+          setTimeout(() => {
+            setArchivedFlash(false);
+            refresh();
+          }, 1400);
+        }
       }
     } catch (e) {
       console.error('toggle failed', e);
+      desiredDone.current.delete(id);
       refresh();
+    } finally {
+      pendingItems.current.delete(id);
     }
   };
 

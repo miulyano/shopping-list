@@ -9,7 +9,7 @@ import {
   newListApi,
   patchItemApi,
   reuseArchive,
-  toggleItemApi,
+  setItemDoneApi,
 } from '../api/client';
 
 function okJson(data: unknown) {
@@ -38,11 +38,24 @@ describe('api client', () => {
     await expect(fetchState()).rejects.toThrow('HTTP 500: boom');
   });
 
-  it('POST /api/items/:id/toggle', async () => {
+  it('POST /api/items/:id/state with done body', async () => {
     const f = vi.fn().mockReturnValue(okJson({ list_id: 1, done: true, archived: false }));
     vi.stubGlobal('fetch', f);
-    await toggleItemApi(42);
-    expect(f).toHaveBeenCalledWith('/api/items/42/toggle', expect.objectContaining({ method: 'POST' }));
+    await setItemDoneApi(42, true);
+    expect(f).toHaveBeenCalledWith('/api/items/42/state', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ done: true }),
+    }));
+  });
+
+  it('POST /api/items/:id/state sends done:false to unmark', async () => {
+    const f = vi.fn().mockReturnValue(okJson({ list_id: 1, done: false, archived: false }));
+    vi.stubGlobal('fetch', f);
+    await setItemDoneApi(42, false);
+    expect(f).toHaveBeenCalledWith('/api/items/42/state', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ done: false }),
+    }));
   });
 
   it('PATCH /api/items/:id sends JSON body', async () => {

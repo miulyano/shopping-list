@@ -38,13 +38,13 @@ def _seed_items(names_with_qty):
 
 def _archive_active():
     from bot.db.store import connect
-    from bot.services.shopping import get_archive, get_state, toggle_item
+    from bot.services.shopping import get_archive, get_state, set_item_done
 
     async def run():
         async with connect() as db:
             state = await get_state(db)
             for it in state.items:
-                await toggle_item(db, it.id, user_id=111)
+                await set_item_done(db, it.id, user_id=111, done=True)
             return (await get_archive(db))[0].id
     return asyncio.run(run())
 
@@ -83,19 +83,57 @@ def test_new_list_conflict_when_non_empty(client, headers):
     assert r.status_code == 409
 
 
-def test_toggle_archives_when_all_done(client, headers):
+def test_set_state_archives_when_all_done(client, headers):
     ids = _seed_items([("Молоко", None), ("Хлеб", None)])
 
-    r1 = client.post(f"/api/items/{ids[0]}/toggle", headers=headers)
+    r1 = client.post(
+        f"/api/items/{ids[0]}/state", headers=headers, json={"done": True}
+    )
     assert r1.status_code == 200
     assert r1.json()["archived"] is False
+    assert r1.json()["done"] is True
 
-    r2 = client.post(f"/api/items/{ids[1]}/toggle", headers=headers)
+    r2 = client.post(
+        f"/api/items/{ids[1]}/state", headers=headers, json={"done": True}
+    )
     assert r2.json()["archived"] is True
 
     state = client.get("/api/state", headers=headers).json()
     assert state["active_list"] is None
     assert state["archive_count"] == 1
+
+
+def test_set_state_is_idempotent(client, headers):
+    """Repeated POST with the same done value must not flip state — closes the
+    fast-tap race where two in-flight requests would otherwise both toggle."""
+    [item_id] = _seed_items([("A", None)])
+    r1 = client.post(
+        f"/api/items/{item_id}/state", headers=headers, json={"done": True}
+    )
+    r2 = client.post(
+        f"/api/items/{item_id}/state", headers=headers, json={"done": True}
+    )
+    assert r1.json()["done"] is True
+    assert r2.json()["done"] is True
+
+
+def test_set_state_unset_done(client, headers):
+    # Two items so marking one done doesn't auto-archive the list.
+    ids = _seed_items([("A", None), ("B", None)])
+    client.post(f"/api/items/{ids[0]}/state", headers=headers, json={"done": True})
+    r = client.post(
+        f"/api/items/{ids[0]}/state", headers=headers, json={"done": False}
+    )
+    assert r.status_code == 200
+    assert r.json()["done"] is False
+    state = client.get("/api/state", headers=headers).json()
+    target = next(i for i in state["active_list"]["items"] if i["id"] == ids[0])
+    assert target["done"] is False
+
+
+def test_set_state_unknown_item_404(client, headers):
+    r = client.post("/api/items/9999/state", headers=headers, json={"done": True})
+    assert r.status_code == 404
 
 
 def test_patch_item_updates_name_and_qty(client, headers):
@@ -197,8 +235,8 @@ def test_delete_archive_unknown_404(client, headers):
 
 def test_archive_purchased_moves_done_items(client, headers):
     ids = _seed_items([("A", None), ("B", None), ("C", None)])
-    client.post(f"/api/items/{ids[0]}/toggle", headers=headers)
-    client.post(f"/api/items/{ids[1]}/toggle", headers=headers)
+    client.post(f"/api/items/{ids[0]}/state", headers=headers, json={"done": True})
+    client.post(f"/api/items/{ids[1]}/state", headers=headers, json={"done": True})
 
     state = client.get("/api/state", headers=headers).json()
     active_id = state["active_list"]["id"]

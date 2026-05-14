@@ -16,7 +16,7 @@ from bot.services.shopping import (
     get_archive_list,
     get_state,
     reuse_archive_list,
-    toggle_item,
+    set_item_done,
     update_item,
 )
 from webapp.auth import validate_init_data
@@ -74,6 +74,10 @@ class ItemPatch(BaseModel):
     qty: str | None = None
 
 
+class ItemState(BaseModel):
+    done: bool
+
+
 @router.get("/state")
 async def state(user_id: int = Depends(current_user)) -> dict:
     async with connect() as db:
@@ -122,10 +126,12 @@ async def archive_delete(list_id: int, _: int = Depends(current_user)) -> dict:
     return {"deleted": True}
 
 
-@router.post("/items/{item_id}/toggle")
-async def toggle(item_id: int, user_id: int = Depends(current_user)) -> dict:
+@router.post("/items/{item_id}/state")
+async def set_state(
+    item_id: int, payload: ItemState, user_id: int = Depends(current_user)
+) -> dict:
     async with connect() as db:
-        result = await toggle_item(db, item_id, user_id)
+        result = await set_item_done(db, item_id, user_id, payload.done)
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
     list_id, done, archived = result

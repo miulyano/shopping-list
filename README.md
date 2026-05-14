@@ -78,7 +78,7 @@ shopping-list/
 ├── webapp/
 │   ├── main.py                 # FastAPI app + lifespan
 │   ├── auth.py                 # initData HMAC verification
-│   ├── api.py                  # /api/state /api/archive[/{id}[/reuse]] /api/items/{id}[/toggle] /api/lists/new /api/lists/{id}/archive-purchased
+│   ├── api.py                  # /api/state /api/archive[/{id}[/reuse]] /api/items/{id}[/state] /api/lists/new /api/lists/{id}/archive-purchased
 │   ├── frontend/               # Mini App SPA (Vite + React 19 + TS 5)
 │   │   ├── package.json
 │   │   ├── vite.config.ts

@@ -113,18 +113,79 @@ describe('App view states', () => {
 });
 
 describe('App optimistic toggle', () => {
-  it('sends POST /api/items/:id/toggle on row click', async () => {
+  it('sends POST /api/items/:id/state with done:true on row click', async () => {
     const f = mockFetch({
       '/api/state': () => listState([
         { id: 10, name: 'молоко', qty: null, done: false, position: 0 },
       ]),
-      '/api/items/10/toggle': () => ({ list_id: 1, done: true, archived: false }),
+      '/api/items/10/state': () => ({ list_id: 1, done: true, archived: false }),
     });
     render(<App />);
     await waitFor(() => expect(screen.getByText('молоко')).toBeInTheDocument());
     fireEvent.click(screen.getByText('молоко'));
     await waitFor(() => {
-      expect(f).toHaveBeenCalledWith('/api/items/10/toggle', expect.objectContaining({ method: 'POST' }));
+      expect(f).toHaveBeenCalledWith('/api/items/10/state', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ done: true }),
+      }));
+    });
+  });
+
+  it('coalesces fast double tap into final desired state', async () => {
+    // Two clicks before server responds. First request returns done:true;
+    // the worker must then send a second request with done:false (the latest
+    // desired state). Net effect on the row: still unchecked, as the user
+    // intended.
+    let resolveFirst: ((v: unknown) => void) | null = null;
+    const stateCalls: unknown[] = [];
+    stateCalls.push({ list_id: 1, done: true, archived: false });
+    stateCalls.push({ list_id: 1, done: false, archived: false });
+
+    const f = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+      if (url === '/api/state') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => listState([
+            { id: 10, name: 'молоко', qty: null, done: false, position: 0 },
+          ]),
+        } as Response);
+      }
+      if (url === '/api/items/10/state') {
+        const body = JSON.parse((opts?.body as string) || '{}');
+        if (resolveFirst) {
+          const next = stateCalls.shift();
+          return Promise.resolve({ ok: true, status: 200, json: async () => next } as Response);
+        }
+        return new Promise((resolve) => {
+          resolveFirst = (v) => resolve({
+            ok: true,
+            status: 200,
+            json: async () => v,
+          } as Response);
+          void body;
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${url}`));
+    });
+    vi.stubGlobal('fetch', f);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('молоко')).toBeInTheDocument());
+    const row = screen.getByText('молоко');
+    fireEvent.click(row);
+    fireEvent.click(row);
+    // First request still hanging — release it now.
+    await waitFor(() => expect(resolveFirst).not.toBeNull());
+    resolveFirst!(stateCalls.shift());
+
+    await waitFor(() => {
+      const calls = f.mock.calls.filter((c: unknown[]) => c[0] === '/api/items/10/state');
+      expect(calls).toHaveLength(2);
+      const first = calls[0]![1] as RequestInit;
+      const second = calls[1]![1] as RequestInit;
+      expect(JSON.parse(first.body as string)).toEqual({ done: true });
+      expect(JSON.parse(second.body as string)).toEqual({ done: false });
     });
   });
 });
