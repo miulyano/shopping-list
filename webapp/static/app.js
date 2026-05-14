@@ -36,6 +36,8 @@ function lockMiniApp(t) {
 
 lockMiniApp(tg);
 
+const TOP_INSET = isMobileTg(tg) ? 64 : 20;
+
 // ─── tokens ──────────────────────────────────────────────────
 const LIGHT = {
   bg:        '#F2F2F7',
@@ -793,7 +795,7 @@ function ArchiveScreen({ onBack, onOpen }) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{
-        padding: '64px 16px 14px',
+        padding: `${TOP_INSET}px 16px 14px`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
       }}>
         <div style={{ fontFamily: SF, fontSize: 28, fontWeight: 700, letterSpacing: -0.5, color: T.text }}>Архив</div>
@@ -901,7 +903,7 @@ function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, onAfterD
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{
-        padding: '64px 16px 12px',
+        padding: `${TOP_INSET}px 16px 12px`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
       }}>
         <button onClick={onBack} style={{
@@ -1169,7 +1171,7 @@ function ShoppingApp() {
   if (total === 0 && archiveCount === 0) {
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
-        <div style={{ height: 64, flexShrink: 0 }}/>
+        <div style={{ height: TOP_INSET, flexShrink: 0 }}/>
         <StarterScreen onOpenChat={closeApp}/>
       </div>
     );
@@ -1178,7 +1180,7 @@ function ShoppingApp() {
   if (total === 0) {
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
-        <div style={{ height: 64, flexShrink: 0 }}/>
+        <div style={{ height: TOP_INSET, flexShrink: 0 }}/>
         <EmptyState
           kind="done"
           onCreate={onCreate}
@@ -1192,7 +1194,7 @@ function ShoppingApp() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
-      <div style={{ padding: '64px 22px 14px' }}>
+      <div style={{ padding: `${TOP_INSET}px 22px 14px` }}>
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
         }}>
