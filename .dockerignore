@@ -16,7 +16,6 @@ tmp
 .agents
 .github
 tests
-scripts
 design
 node_modules
 webapp/frontend/node_modules
