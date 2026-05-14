@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Дедупликация результатов LLM-парсера: одинаковые `ParsedItem` (по ключу `(casefolded name, qty)`) схлопываются перед записью в БД. На коротком неоднозначном вводе (`«Яблоки бананы»`) `gpt-4o-mini` иногда возвращал 4 позиции вместо 2; теперь схлопывается до 2. Позиции с тем же именем, но разным `qty`, остаются как разные. При обнаружении дублей пишется `WARNING` с raw response для дальнейшей диагностики.
+
 ### Changed
 - Mini App переведён с in-browser Babel + CDN React 18 на полноценную сборку Vite 6 + React 19 + TypeScript 5 (strict). Исходники разнесены по `webapp/frontend/src/{components,icons,hooks,lib,api}`. Bundle хешируется (`assets/index-<hash>.{js,css}`), нет runtime-транспиляции в браузере. Поведение, визуал, поверхность API, polling-каденс и Telegram-интеграция сохранены без изменений.
 - `Dockerfile.webapp` стал multi-stage: `node:22-alpine` собирает фронт, `python:3.12-slim` сервит. `webapp/static/` теперь build-артефакт, исключён из git.

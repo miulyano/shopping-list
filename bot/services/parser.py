@@ -168,4 +168,18 @@ async def parse_text(text: str) -> list[ParsedItem]:
         if not formatted:
             continue
         out.append(ParsedItem(name=formatted, qty=normalize_qty(i.get("qty")), brands=brands))
-    return out
+
+    seen: set[tuple[str, Optional[str]]] = set()
+    deduped: list[ParsedItem] = []
+    for item in out:
+        key = (item.name.casefold(), item.qty)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    if len(deduped) != len(out):
+        logger.warning(
+            "Parser returned %d items, deduped to %d for input %r; raw=%r",
+            len(out), len(deduped), text, raw,
+        )
+    return deduped
