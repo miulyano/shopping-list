@@ -4,8 +4,8 @@ import type {
   ApiArchivePurchasedResult,
   ApiList,
   ApiReuseResult,
+  ApiSetDoneResult,
   ApiState,
-  ApiToggleResult,
 } from '../types';
 
 const initData = tg ? tg.initData : '';
@@ -33,8 +33,8 @@ export const reuseArchive = (id: number): Promise<ApiReuseResult> =>
   api(`/api/archive/${id}/reuse`, { method: 'POST' });
 export const deleteArchive = (id: number): Promise<{ deleted: boolean }> =>
   api(`/api/archive/${id}`, { method: 'DELETE' });
-export const toggleItemApi = (id: number): Promise<ApiToggleResult> =>
-  api(`/api/items/${id}/toggle`, { method: 'POST' });
+export const setItemDoneApi = (id: number, done: boolean): Promise<ApiSetDoneResult> =>
+  api(`/api/items/${id}/state`, { method: 'POST', body: JSON.stringify({ done }) });
 export const patchItemApi = (
   id: number,
   body: { name: string; qty: string | null },

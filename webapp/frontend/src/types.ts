@@ -38,7 +38,7 @@ export interface ApiArchiveList {
   lists: ApiList[];
 }
 
-export interface ApiToggleResult {
+export interface ApiSetDoneResult {
   list_id: number;
   done: boolean;
   archived: boolean;

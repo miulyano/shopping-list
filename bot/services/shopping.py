@@ -57,18 +57,23 @@ async def add_items(
     return list_id, inserted
 
 
-async def toggle_item(
+async def set_item_done(
     db: aiosqlite.Connection,
     item_id: int,
     user_id: int,
+    done: bool,
 ) -> Optional[tuple[int, bool, bool]]:
-    """Toggle done flag. Returns (list_id, new_done, archived) or None if item not found."""
+    """Set done flag to an explicit value. Idempotent — repeating the same call
+    is a no-op, concurrent calls converge to the latest committed value.
+
+    Returns (list_id, done, archived) or None if item not found.
+    """
     row = await (await db.execute(
-        "SELECT id, list_id, done FROM items WHERE id=?", (item_id,)
+        "SELECT list_id FROM items WHERE id=?", (item_id,)
     )).fetchone()
     if not row:
         return None
-    new_done = 0 if row["done"] else 1
+    new_done = 1 if done else 0
     now = int(time.time())
     await db.execute(
         "UPDATE items SET done=?, checked_by=?, checked_at=? WHERE id=?",

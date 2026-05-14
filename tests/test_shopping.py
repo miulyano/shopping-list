@@ -12,7 +12,7 @@ from bot.services.shopping import (
     get_archive_list,
     get_state,
     reuse_archive_list,
-    toggle_item,
+    set_item_done,
     update_item,
 )
 
@@ -67,12 +67,12 @@ async def test_add_items_idempotent_on_preformatted_names(db):
 
 
 @pytest.mark.asyncio
-async def test_toggle_marks_done_and_records_user(db):
+async def test_set_done_marks_and_records_user(db):
     _, _ = await add_items(db, [ParsedItem("Молоко")], user_id=111)
     state = await get_state(db)
     item_id = state.items[0].id
 
-    result = await toggle_item(db, item_id, user_id=222)
+    result = await set_item_done(db, item_id, user_id=222, done=True)
     assert result is not None
     list_id, done, archived = result
     assert done is True
@@ -88,10 +88,10 @@ async def test_archive_only_when_all_done(db):
     state = await get_state(db)
     a_id, b_id = state.items[0].id, state.items[1].id
 
-    _, _, archived_a = await toggle_item(db, a_id, user_id=111)
+    _, _, archived_a = await set_item_done(db, a_id, user_id=111, done=True)
     assert archived_a is False
 
-    _, _, archived_b = await toggle_item(db, b_id, user_id=111)
+    _, _, archived_b = await set_item_done(db, b_id, user_id=111, done=True)
     assert archived_b is True
 
     assert await archive_count(db) == 1
@@ -101,17 +101,42 @@ async def test_archive_only_when_all_done(db):
 
 
 @pytest.mark.asyncio
-async def test_toggle_back_unmarks(db):
+async def test_unset_done_clears_user_and_timestamp(db):
     await add_items(db, [ParsedItem("A"), ParsedItem("B")], user_id=111)
     state = await get_state(db)
     a_id = state.items[0].id
 
-    await toggle_item(db, a_id, user_id=111)
+    await set_item_done(db, a_id, user_id=111, done=True)
     state2 = await get_state(db)
     item_a = next(i for i in state2.items if i.id == a_id)
     assert item_a.done is True
 
-    await toggle_item(db, a_id, user_id=111)
+    await set_item_done(db, a_id, user_id=111, done=False)
+    state3 = await get_state(db)
+    item_a = next(i for i in state3.items if i.id == a_id)
+    assert item_a.done is False
+    assert item_a.checked_by is None
+
+
+@pytest.mark.asyncio
+async def test_set_done_idempotent(db):
+    """Repeated set_item_done with the same value is a no-op (besides bumping
+    checked_at when done=True). This is the core property that makes
+    concurrent toggle requests safe."""
+    await add_items(db, [ParsedItem("A"), ParsedItem("B")], user_id=111)
+    state = await get_state(db)
+    a_id = state.items[0].id
+
+    _, done1, _ = await set_item_done(db, a_id, user_id=111, done=True)
+    _, done2, _ = await set_item_done(db, a_id, user_id=111, done=True)
+    assert done1 is True and done2 is True
+    state2 = await get_state(db)
+    item_a = next(i for i in state2.items if i.id == a_id)
+    assert item_a.done is True
+
+    _, done3, _ = await set_item_done(db, a_id, user_id=111, done=False)
+    _, done4, _ = await set_item_done(db, a_id, user_id=111, done=False)
+    assert done3 is False and done4 is False
     state3 = await get_state(db)
     item_a = next(i for i in state3.items if i.id == a_id)
     assert item_a.done is False
@@ -128,17 +153,17 @@ async def test_checked_items_sink_to_bottom(db):
     state = await get_state(db)
     a_id, b_id, _c_id = (i.id for i in state.items)
 
-    await toggle_item(db, b_id, user_id=111)
+    await set_item_done(db, b_id, user_id=111, done=True)
     state2 = await get_state(db)
     assert [i.name for i in state2.items] == ["a", "c", "b"]
     assert [i.done for i in state2.items] == [False, False, True]
 
-    await toggle_item(db, a_id, user_id=111)
+    await set_item_done(db, a_id, user_id=111, done=True)
     state3 = await get_state(db)
     assert [i.name for i in state3.items] == ["c", "a", "b"]
     assert [i.done for i in state3.items] == [False, True, True]
 
-    await toggle_item(db, a_id, user_id=111)
+    await set_item_done(db, a_id, user_id=111, done=False)
     state4 = await get_state(db)
     assert [i.name for i in state4.items] == ["a", "c", "b"]
     assert [i.done for i in state4.items] == [False, False, True]
@@ -157,9 +182,9 @@ async def test_recently_checked_goes_to_top_of_checked_block(db, monkeypatch):
     import bot.services.shopping as svc
 
     monkeypatch.setattr(svc.time, "time", lambda: 1000.0)
-    await toggle_item(db, a_id, user_id=111)
+    await set_item_done(db, a_id, user_id=111, done=True)
     monkeypatch.setattr(svc.time, "time", lambda: 2000.0)
-    await toggle_item(db, b_id, user_id=111)
+    await set_item_done(db, b_id, user_id=111, done=True)
 
     state2 = await get_state(db)
     assert [i.name for i in state2.items] == ["c", "b", "a"]
@@ -167,8 +192,8 @@ async def test_recently_checked_goes_to_top_of_checked_block(db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_toggle_unknown_item_returns_none(db):
-    result = await toggle_item(db, 9999, user_id=111)
+async def test_set_done_unknown_item_returns_none(db):
+    result = await set_item_done(db, 9999, user_id=111, done=True)
     assert result is None
 
 
@@ -223,7 +248,7 @@ async def test_delete_unknown_item_returns_none(db):
 async def test_get_archive_list_only_archived(db):
     await add_items(db, [ParsedItem("A")], user_id=111)
     item_id = (await get_state(db)).items[0].id
-    _, _, archived = await toggle_item(db, item_id, user_id=111)
+    _, _, archived = await set_item_done(db, item_id, user_id=111, done=True)
     assert archived
 
     archive = await get_archive(db)
@@ -246,7 +271,7 @@ async def test_delete_archive_list_cascades_items(db):
     await add_items(db, [ParsedItem("A"), ParsedItem("B")], user_id=111)
     state = await get_state(db)
     for it in state.items:
-        await toggle_item(db, it.id, user_id=111)
+        await set_item_done(db, it.id, user_id=111, done=True)
     archived_id = (await get_archive(db))[0].id
 
     assert await delete_archive_list(db, archived_id) is True
@@ -268,7 +293,7 @@ async def test_reuse_archive_creates_new_active_with_items_undone(db):
     )
     state = await get_state(db)
     for it in state.items:
-        await toggle_item(db, it.id, user_id=111)
+        await set_item_done(db, it.id, user_id=111, done=True)
     archived_id = (await get_archive(db))[0].id
 
     assert await get_state(db) is None  # no active
@@ -292,7 +317,7 @@ async def test_reuse_archive_appends_to_existing_active(db):
     # archive #1
     await add_items(db, [ParsedItem("A")], user_id=111)
     a_id = (await get_state(db)).items[0].id
-    await toggle_item(db, a_id, user_id=111)
+    await set_item_done(db, a_id, user_id=111, done=True)
     archived_id = (await get_archive(db))[0].id
 
     # new active with one item
@@ -324,8 +349,8 @@ async def test_archive_purchased_splits_done_into_new_archive(db):
     state = await get_state(db)
     a_id, b_id, _c_id = (i.id for i in state.items)
 
-    await toggle_item(db, a_id, user_id=111)
-    await toggle_item(db, b_id, user_id=111)
+    await set_item_done(db, a_id, user_id=111, done=True)
+    await set_item_done(db, b_id, user_id=111, done=True)
 
     result = await archive_purchased(db, state.id)
     assert result is not None
@@ -392,7 +417,7 @@ async def test_archive_purchased_unknown_or_archived_returns_none(db):
     await add_items(db, [ParsedItem("A")], user_id=111)
     state = await get_state(db)
     a_id = state.items[0].id
-    _, _, archived = await toggle_item(db, a_id, user_id=111)
+    _, _, archived = await set_item_done(db, a_id, user_id=111, done=True)
     assert archived
 
     # state.id is now archived, not active — should reject
