@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.10.1-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-0.11.0-blue" alt="version">
   <img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey" alt="license">
 </p>
 
@@ -41,7 +41,8 @@ Telegram-бот + Mini App для общего списка покупок. Пр
 - [aiosqlite](https://github.com/omnilib/aiosqlite) — SQLite-хранилище
 - [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) — конфиг из `.env`
 - [FFmpeg](https://ffmpeg.org/) (системная зависимость) — нормализация голосовых в MP3 16kHz mono
-- [React 18](https://react.dev/) + [Babel standalone](https://babeljs.io/docs/babel-standalone) (CDN) — Mini App (без build-step)
+- [React 19](https://react.dev/) + [Vite 6](https://vite.dev/) + [TypeScript 5](https://www.typescriptlang.org/) — Mini App SPA (исходники в `webapp/frontend/`, билд `vite build` пишет в `webapp/static/`)
+- [Node.js 22 LTS](https://nodejs.org/) — сборка фронта (только build-time, рантайм webapp остаётся на Python)
 
 ## Структура проекта
 
@@ -78,9 +79,23 @@ shopping-list/
 │   ├── main.py                 # FastAPI app + lifespan
 │   ├── auth.py                 # initData HMAC verification
 │   ├── api.py                  # /api/state /api/archive[/{id}[/reuse]] /api/items/{id}[/toggle] /api/lists/new /api/lists/{id}/archive-purchased
-│   └── static/
-│       ├── index.html          # Mini App shell
-│       └── app.js              # React-приложение Mini App (без build-step)
+│   ├── frontend/               # Mini App SPA (Vite + React 19 + TS 5)
+│   │   ├── package.json
+│   │   ├── vite.config.ts
+│   │   ├── tsconfig.json
+│   │   ├── eslint.config.js
+│   │   ├── index.html          # Vite entry-точка
+│   │   └── src/
+│   │       ├── main.tsx        # createRoot, init темы, lockMiniApp
+│   │       ├── App.tsx         # корневой компонент (polling /api/state, view-роутинг)
+│   │       ├── theme.ts        # LIGHT/DARK токены + useTheme (useSyncExternalStore)
+│   │       ├── types.ts        # типы API
+│   │       ├── icons.tsx       # SVG-иконки (Plus, Mic, Camera, Check, Cart, Archive, ...)
+│   │       ├── lib/            # telegram.ts, constants.ts, format.ts, primary.ts
+│   │       ├── api/client.ts   # fetch-обёртка с X-Telegram-Init-Data
+│   │       ├── components/     # ItemRow, EditSheet, ConfirmSheet, Progress, StatusBanner, ChatHint, StarterScreen, EmptyState, ArchiveScreen, ArchiveDetailScreen
+│   │       └── styles/globals.css  # анимации, safe-area, скрытие скроллбара
+│   └── static/                 # gitignored: артефакт `vite build` (index.html + assets/*)
 ├── tests/
 │   ├── conftest.py             # фикстуры + sign_init_data
 │   ├── test_auth.py
@@ -222,6 +237,8 @@ curl -I https://<your-domain>/
 
 ### 5. Локально без docker (для разработки)
 
+**Backend (bot + webapp API):**
+
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-webapp.txt
@@ -229,7 +246,22 @@ python -m bot.main                                    # bot
 uvicorn webapp.main:app --host 0.0.0.0 --port 8000    # webapp (другой терминал)
 ```
 
-Mini App в этом режиме недоступен (Telegram требует HTTPS) — гонять только handlers бота.
+**Frontend (Mini App SPA):** требуется Node.js 22 LTS.
+
+```bash
+cd webapp/frontend
+npm install                                           # один раз
+npm run dev                                           # Vite на :5173 с прокси /api → :8000
+```
+
+Vite dev-сервер удобен для UI-итераций вне Telegram — `window.Telegram.WebApp` будет
+undefined, и часть фич (initData, fullscreen, theme) не работает, но рендер и
+оптимистичные обновления отлаживать можно. Для полноценного запуска как Mini App
+нужен HTTPS-домен (через прод-Docker + reverse-proxy с TLS) — Telegram блокирует
+WebView по HTTP.
+
+`npm run build` собирает фронт в `webapp/static/` (gitignored). `npm run lint`
+прогоняет ESLint flat config + TypeScript. Эти же шаги выполняет CI/Docker-сборка.
 
 ## Verify-чеклист (E2E)
 
@@ -247,6 +279,8 @@ Mini App в этом режиме недоступен (Telegram требует 
 
 ## Тесты
 
+**Backend (Python):**
+
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -254,6 +288,26 @@ pytest -v
 ```
 
 Покрыто: парсер (нормализация количеств, контекст единиц), whitelist-авторизация, клавиатура Mini App (DM/группа), бизнес-логика списков (add/toggle/update/delete, архив, reuse), ingest-state для status banner, HMAC-валидация initData Mini App, REST API (`/api/state`, `/api/items/{id}[/toggle]`, `/api/archive[/{id}[/reuse]]`, `/api/lists/new`).
+
+**Frontend (TypeScript):**
+
+```bash
+cd webapp/frontend
+npm install
+npm run lint                  # ESLint flat config (typescript-eslint, react-hooks, react-refresh)
+npx tsc --noEmit              # type-check
+npm run build                 # tsc + vite build
+npm run test                  # Vitest + jsdom + Testing Library (~50 тестов)
+```
+
+Покрыто (Vitest):
+- `format.ts` — `pluralRu`, `fmtDate`, `fmtDateTime`, `fmtDateTimeCaps`, `pad2` (граничные случаи русской плюрализации).
+- `theme.ts` — `applyTheme` (light/dark round-trip, мутация `T` in-place, body `data-theme`).
+- `api/client.ts` — все 11 endpoints: проверка path/method/headers/JSON body, `X-Telegram-Init-Data`, error mapping.
+- `ItemRow` — render name/qty, toggle/edit/delete handlers, strikethrough на `done`.
+- `EditSheet` — prefilled inputs, trim'ы, blank-name reject, Enter-to-save, Отмена.
+- `ConfirmSheet` — confirm / cancel / overlay-cancel.
+- `App` — view-роутинг (Starter / EmptyDone / List / Archive), оптимистичный toggle (`POST /api/items/:id/toggle`), polling /api/state каждые 2000 мс при visible вкладке.
 
 См. `CLAUDE.md` — тесты править нельзя, чтобы они проходили; чинить нужно код.
 

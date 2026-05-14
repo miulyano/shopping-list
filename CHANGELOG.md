@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed
+- Mini App переведён с in-browser Babel + CDN React 18 на полноценную сборку Vite 6 + React 19 + TypeScript 5 (strict). Исходники разнесены по `webapp/frontend/src/{components,icons,hooks,lib,api}`. Bundle хешируется (`assets/index-<hash>.{js,css}`), нет runtime-транспиляции в браузере. Поведение, визуал, поверхность API, polling-каденс и Telegram-интеграция сохранены без изменений.
+- `Dockerfile.webapp` стал multi-stage: `node:22-alpine` собирает фронт, `python:3.12-slim` сервит. `webapp/static/` теперь build-артефакт, исключён из git.
+- Добавлен `.dockerignore`, чтобы локальные `node_modules` и `.venv` не попадали в build-context.
+
+### Added
+- Vitest + jsdom + Testing Library: 50 фронтенд-тестов покрывают `format.ts`, `theme.ts`, `api/client.ts` (11 endpoints), `ItemRow`, `EditSheet`, `ConfirmSheet`, view-роутинг и polling `App`. Запуск — `npm run test` в `webapp/frontend`.
+
 ## [0.10.1] – 2026-05-14
 
 ### Fixed
