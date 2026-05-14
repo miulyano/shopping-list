@@ -4,6 +4,7 @@ from bot.services.parser import ParsedItem
 from bot.services.shopping import (
     add_items,
     archive_count,
+    archive_purchased,
     delete_archive_list,
     delete_item,
     ensure_active_list,
@@ -311,3 +312,88 @@ async def test_reuse_archive_appends_to_existing_active(db):
 @pytest.mark.asyncio
 async def test_reuse_archive_unknown_returns_none(db):
     assert await reuse_archive_list(db, 9999, user_id=111) is None
+
+
+@pytest.mark.asyncio
+async def test_archive_purchased_splits_done_into_new_archive(db):
+    await add_items(
+        db,
+        [ParsedItem("A"), ParsedItem("B"), ParsedItem("C")],
+        user_id=111,
+    )
+    state = await get_state(db)
+    a_id, b_id, _c_id = (i.id for i in state.items)
+
+    await toggle_item(db, a_id, user_id=111)
+    await toggle_item(db, b_id, user_id=111)
+
+    result = await archive_purchased(db, state.id)
+    assert result is not None
+    archive_id, moved = result
+    assert archive_id != state.id
+    assert moved == 2
+
+    active = await get_state(db)
+    assert active is not None
+    assert active.id == state.id
+    assert [i.name for i in active.items] == ["c"]
+    assert all(not i.done for i in active.items)
+    assert active.items[0].position == 1
+
+    archived = await get_archive_list(db, archive_id)
+    assert archived is not None
+    assert {i.name for i in archived.items} == {"a", "b"}
+    assert all(i.done for i in archived.items)
+
+
+@pytest.mark.asyncio
+async def test_archive_purchased_noop_when_nothing_done(db):
+    await add_items(db, [ParsedItem("A"), ParsedItem("B")], user_id=111)
+    state = await get_state(db)
+
+    assert await archive_purchased(db, state.id) is None
+    assert await archive_count(db) == 0
+    active = await get_state(db)
+    assert [i.name for i in active.items] == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_archive_purchased_all_done_creates_archive_and_empties_active(db):
+    await add_items(db, [ParsedItem("A"), ParsedItem("B")], user_id=111)
+    state = await get_state(db)
+    for it in state.items:
+        # use update_item path doesn't toggle — call SQL via toggle is overkill;
+        # but we want them done without triggering auto-archive.
+        await db.execute(
+            "UPDATE items SET done=1, checked_by=?, checked_at=? WHERE id=?",
+            (111, 9999, it.id),
+        )
+    await db.commit()
+
+    result = await archive_purchased(db, state.id)
+    assert result is not None
+    archive_id, moved = result
+    assert moved == 2
+
+    active = await get_state(db)
+    assert active is not None
+    assert active.id == state.id
+    assert active.items == []
+
+    archived = await get_archive_list(db, archive_id)
+    assert archived is not None
+    assert {i.name for i in archived.items} == {"a", "b"}
+
+
+@pytest.mark.asyncio
+async def test_archive_purchased_unknown_or_archived_returns_none(db):
+    assert await archive_purchased(db, 9999) is None
+
+    await add_items(db, [ParsedItem("A")], user_id=111)
+    state = await get_state(db)
+    a_id = state.items[0].id
+    _, _, archived = await toggle_item(db, a_id, user_id=111)
+    assert archived
+
+    # state.id is now archived, not active — should reject
+    assert await archive_purchased(db, state.id) is None

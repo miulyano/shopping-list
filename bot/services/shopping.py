@@ -223,6 +223,50 @@ async def delete_archive_list(db: aiosqlite.Connection, list_id: int) -> bool:
     return True
 
 
+async def archive_purchased(
+    db: aiosqlite.Connection,
+    list_id: int,
+) -> Optional[tuple[int, int]]:
+    """Move purchased (done=1) items out of active list into a new archived list.
+
+    Returns (archived_list_id, moved_count) or None if active list not found
+    or there are no purchased items to move.
+    """
+    row = await (await db.execute(
+        "SELECT id FROM lists WHERE id=? AND status='active'", (list_id,)
+    )).fetchone()
+    if not row:
+        return None
+
+    count_row = await (await db.execute(
+        "SELECT COUNT(*) AS n FROM items WHERE list_id=? AND done=1", (list_id,)
+    )).fetchone()
+    moved = count_row["n"] or 0
+    if moved == 0:
+        return None
+
+    now = int(time.time())
+    cursor = await db.execute(
+        "INSERT INTO lists (status, created_at, archived_at) VALUES ('archived', ?, ?)",
+        (now, now),
+    )
+    new_archive_id = cursor.lastrowid
+
+    await db.execute(
+        "UPDATE items SET list_id=? WHERE list_id=? AND done=1",
+        (new_archive_id, list_id),
+    )
+
+    remaining = await (await db.execute(
+        "SELECT id FROM items WHERE list_id=? ORDER BY position ASC", (list_id,)
+    )).fetchall()
+    for i, r in enumerate(remaining, start=1):
+        await db.execute("UPDATE items SET position=? WHERE id=?", (i, r["id"]))
+
+    await db.commit()
+    return new_archive_id, moved
+
+
 async def reuse_archive_list(
     db: aiosqlite.Connection,
     src_list_id: int,

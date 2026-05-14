@@ -8,6 +8,7 @@ from bot.db.store import connect
 from bot.services import ingest_state
 from bot.services.shopping import (
     archive_count,
+    archive_purchased,
     delete_archive_list,
     delete_item,
     ensure_active_list,
@@ -152,6 +153,20 @@ async def remove_item(item_id: int, _: int = Depends(current_user)) -> dict:
     if list_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
     return {"id": item_id, "list_id": list_id, "deleted": True}
+
+
+@router.post("/lists/{list_id}/archive-purchased")
+async def list_archive_purchased(
+    list_id: int, _: int = Depends(current_user)
+) -> dict:
+    async with connect() as db:
+        result = await archive_purchased(db, list_id)
+    if result is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "active list not found or nothing to archive"
+        )
+    archive_id, moved = result
+    return {"archived_list_id": archive_id, "moved": moved}
 
 
 @router.post("/lists/new")

@@ -71,9 +71,10 @@ const DARK = {
   pillBg:    'rgba(120,120,128,0.24)',
   inverseFg: '#000000',
 };
-const T = { ...LIGHT };
+const T = { ...LIGHT, dark: false };
 function applyTheme(dark) {
   Object.assign(T, dark ? DARK : LIGHT);
+  T.dark = !!dark;
   document.body.setAttribute('data-theme', dark ? 'dark' : 'light');
 }
 
@@ -83,6 +84,18 @@ const fmtDate = (d) => {
   const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
   return `${d.getDate()} ${months[d.getMonth()]}`;
 };
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const fmtDateTime = (d) => `${fmtDate(d)}, ${d.getHours()}:${pad2(d.getMinutes())}`;
+const fmtDateTimeCaps = (d) => fmtDateTime(d).toUpperCase();
+
+// Primary CTA style — tinted blue in light theme, solid black in dark.
+function usePrimary() {
+  if (T.dark) {
+    return { background: T.text, color: T.inverseFg, border: 'none' };
+  }
+  return { background: 'rgba(0,122,255,0.14)', color: T.blue, border: 'none' };
+}
 
 function pluralRu(n, forms) {
   const a = Math.abs(n) % 100;
@@ -121,6 +134,7 @@ const toggleItemApi     = (id)         => api(`/api/items/${id}/toggle`, { metho
 const patchItemApi      = (id, body)   => api(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 const deleteItemApi     = (id)         => api(`/api/items/${id}`, { method: 'DELETE' });
 const newListApi        = ()           => api('/api/lists/new', { method: 'POST' });
+const archivePurchasedApi = (listId)   => api(`/api/lists/${listId}/archive-purchased`, { method: 'POST' });
 
 const closeApp = () => { if (tg) tg.close(); };
 
@@ -290,12 +304,19 @@ function ItemRow({ item, onToggle, onEdit, onDelete, isLast, openId, setOpenId }
           flex: 1, fontFamily: SF, fontSize: 17, letterSpacing: -0.4,
           color: item.done ? T.text2 : T.text,
           textDecoration: item.done ? 'line-through' : 'none',
-          textDecorationColor: T.text2,
+          textDecorationColor: 'currentColor',
+          textDecorationThickness: '1.5px',
+          textDecorationSkipInk: 'none',
           transition: 'color 0.2s ease',
         }}>
           {item.name}
           {item.qty && (
-            <span style={{ color: T.text2, marginLeft: 8, fontSize: 15 }}>
+            <span style={{
+              marginLeft: 8,
+              fontSize: item.done ? 17 : 15,
+              color: 'currentColor',
+              opacity: item.done ? 1 : 0.7,
+            }}>
               {item.qty}
             </span>
           )}
@@ -448,18 +469,36 @@ function ConfirmSheet({ title, desc, confirmLabel, onConfirm, onCancel }) {
 }
 
 // ─── progress bar ────────────────────────────────────────────
-function Progress({ done, total }) {
+function Progress({ done, total, onArchivePurchased }) {
   const pct = total === 0 ? 0 : (done / total) * 100;
+  const showArchive = done > 0 && done < total && typeof onArchivePurchased === 'function';
   return (
     <div style={{ padding: '0 22px 14px' }}>
       <div style={{
-        display: 'flex', justifyContent: 'space-between', marginBottom: 8,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 8, gap: 12,
         fontFamily: SF, fontSize: 13, letterSpacing: -0.08,
       }}>
         <span style={{ color: T.text2 }}>Куплено</span>
-        <span style={{ color: T.text, fontVariantNumeric: 'tabular-nums', fontWeight: 500, whiteSpace: 'nowrap' }}>
-          {done} из {total}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {showArchive && (
+            <button onClick={onArchivePurchased} style={{
+              background: 'transparent', border: 'none',
+              fontFamily: SF, fontSize: 13, color: T.blue, fontWeight: 500,
+              letterSpacing: -0.08, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4, padding: 0,
+            }}>
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                <path d="M7 1.5v7M4 6l3 3 3-3" stroke={T.blue} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M2 9.5v1.8a1.2 1.2 0 001.2 1.2h7.6a1.2 1.2 0 001.2-1.2V9.5" stroke={T.blue} strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+              Убрать купленное
+            </button>
+          )}
+          <span style={{ color: T.text, fontVariantNumeric: 'tabular-nums', fontWeight: 500, whiteSpace: 'nowrap' }}>
+            {done} из {total}
+          </span>
+        </div>
       </div>
       <div style={{ height: 4, borderRadius: 2, background: T.sep, overflow: 'hidden' }}>
         <div style={{
@@ -564,7 +603,8 @@ function Spinner() {
 }
 
 // ─── chat hint (footer) ─────────────────────────────────────
-function ChatHint() {
+function ChatHint({ busy }) {
+  const primary = usePrimary();
   return (
     <div style={{
       padding: '10px 14px 14px',
@@ -573,32 +613,25 @@ function ChatHint() {
       WebkitBackdropFilter: 'blur(20px) saturate(180%)',
       borderTop: `0.5px solid ${T.sep}`,
     }}>
-      <button onClick={closeApp} style={{
-        width: '100%', height: 50, borderRadius: 14,
-        background: T.card, border: `0.5px solid ${T.sep}`,
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '0 14px', cursor: 'pointer',
-        fontFamily: SF, textAlign: 'left',
-      }}>
-        <div style={{
-          width: 28, height: 28, borderRadius: 14,
-          background: 'linear-gradient(135deg, #54A9EB, #2A86D5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M2 6.5l10-4-1.5 10-3-2-2 2v-3l5-4.5" stroke="#fff" strokeWidth="1.4" strokeLinejoin="round" fill="none"/>
-          </svg>
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontSize: 14, fontWeight: 500, color: T.text, letterSpacing: -0.2, lineHeight: 1.2,
-          }}>Откройте чат, чтобы добавить</div>
-          <div style={{
-            fontSize: 12, color: T.text2, letterSpacing: -0.08, marginTop: 1,
-          }}>текст · голосовое · фото</div>
-        </div>
-        <Icon.Chevron s={14}/>
+      <button
+        onClick={busy ? undefined : closeApp}
+        disabled={!!busy}
+        style={{
+          width: '100%', height: 52, borderRadius: 14,
+          ...primary,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          cursor: busy ? 'default' : 'pointer',
+          opacity: busy ? 0.5 : 1, transition: 'opacity 0.2s',
+          fontFamily: SF, fontSize: 17, fontWeight: 600, letterSpacing: -0.4,
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M11.5 2.5l1.1 2.9 2.9 1.1-2.9 1.1-1.1 2.9-1.1-2.9L7.5 6.5l2.9-1.1 1.1-2.9z"
+            fill={primary.color}/>
+          <path d="M5 11l.6 1.6 1.6.6-1.6.6L5 15.4l-.6-1.6L2.8 13.2l1.6-.6L5 11z"
+            fill={primary.color}/>
+        </svg>
+        Добавить товары
       </button>
     </div>
   );
@@ -606,6 +639,7 @@ function ChatHint() {
 
 // ─── starter screen (first launch, no archives) ─────────────
 function StarterScreen({ onOpenChat }) {
+  const primary = usePrimary();
   const methods = [
     {
       icon: (
@@ -672,14 +706,14 @@ function StarterScreen({ onOpenChat }) {
 
       <button onClick={onOpenChat} style={{
         height: 52, borderRadius: 14,
-        background: T.text, border: 'none', color: T.inverseFg,
+        ...primary,
         fontFamily: SF, fontSize: 17, fontWeight: 500, letterSpacing: -0.4,
         cursor: 'pointer', display: 'flex', alignItems: 'center',
         justifyContent: 'center', gap: 8,
       }}>
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <path d="M2.5 8l13-5-2 13-4-2.5-2.5 2.5v-4l6.5-6"
-            stroke={T.inverseFg} strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
+            stroke={primary.color} strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
         </svg>
         Открыть чат с ботом
       </button>
@@ -690,6 +724,7 @@ function StarterScreen({ onOpenChat }) {
 // ─── empty / completed states ───────────────────────────────
 function EmptyState({ kind, onCreate, archiveCount, onOpenArchive }) {
   const isDone = kind === 'done';
+  const primary = usePrimary();
   return (
     <div style={{
       flex: 1, display: 'flex', flexDirection: 'column',
@@ -718,11 +753,11 @@ function EmptyState({ kind, onCreate, archiveCount, onOpenArchive }) {
       </div>
       <button onClick={onCreate} style={{
         height: 50, padding: '0 24px', borderRadius: 14,
-        background: T.text, border: 'none', color: T.inverseFg,
+        ...primary,
         fontFamily: SF, fontSize: 17, fontWeight: 500, letterSpacing: -0.4,
         cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <Icon.Plus s={20} c={T.inverseFg}/>
+        <Icon.Plus s={20} c={primary.color}/>
         Новый список
       </button>
 
@@ -744,6 +779,7 @@ function EmptyState({ kind, onCreate, archiveCount, onOpenArchive }) {
 function ArchiveScreen({ onBack, onOpen }) {
   const [lists, setLists] = useState([]);
   const [loading, setLoading] = useState(true);
+  const primary = usePrimary();
 
   const reload = () => {
     setLoading(true);
@@ -757,18 +793,18 @@ function ArchiveScreen({ onBack, onOpen }) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{
-        padding: '20px 16px 14px',
+        padding: '64px 16px 14px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
       }}>
         <div style={{ fontFamily: SF, fontSize: 28, fontWeight: 700, letterSpacing: -0.5, color: T.text }}>Архив</div>
         <button onClick={onBack} style={{
           height: 36, padding: '0 14px', borderRadius: 18,
-          background: T.text, border: 'none', color: T.inverseFg,
+          ...primary,
           fontFamily: SF, fontSize: 14, fontWeight: 500, letterSpacing: -0.2,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
         }}>
           <svg width="9" height="14" viewBox="0 0 9 14" fill="none">
-            <path d="M7 1L1 7l6 6" stroke={T.inverseFg} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M7 1L1 7l6 6" stroke={primary.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
           К списку
         </button>
@@ -787,7 +823,7 @@ function ArchiveScreen({ onBack, onOpen }) {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: T.text, letterSpacing: -0.24 }}>
-                Список от {fmtDate(new Date((list.archived_at || list.created_at) * 1000))}
+                {fmtDateTime(new Date(list.created_at * 1000))}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ fontSize: 13, color: T.accent, letterSpacing: -0.08, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -814,6 +850,7 @@ function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, onAfterD
   const [loading, setLoading] = useState(true);
   const [confirmDel, setConfirmDel] = useState(false);
   const [busy, setBusy] = useState(false);
+  const primary = usePrimary();
 
   useEffect(() => {
     setLoading(true);
@@ -831,11 +868,9 @@ function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, onAfterD
     );
   }
 
-  const date = fmtDate(new Date((list.archived_at || list.created_at) * 1000));
+  const createdAt = new Date(list.created_at * 1000);
+  const dateForConfirm = fmtDateTime(createdAt);
   const reuseLabel = hasActive ? 'Добавить в текущий список' : 'Создать новый список';
-  const reuseSub   = hasActive
-    ? 'Товары прибавятся к активному'
-    : 'Все товары будут отмечены как непокупленные';
 
   const doReuse = async () => {
     if (busy) return;
@@ -866,7 +901,7 @@ function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, onAfterD
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{
-        padding: '20px 16px 12px',
+        padding: '64px 16px 12px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
       }}>
         <button onClick={onBack} style={{
@@ -896,12 +931,11 @@ function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, onAfterD
 
       <div style={{ padding: '4px 22px 14px' }}>
         <div style={{
-          fontFamily: SF, fontSize: 13, color: T.text2, letterSpacing: -0.08,
-          textTransform: 'uppercase', fontWeight: 500, marginBottom: 4,
-        }}>Архивный список</div>
+          fontFamily: SF, fontSize: 12, color: T.text2, letterSpacing: 0.4,
+          textTransform: 'uppercase', fontWeight: 600, marginBottom: 6,
+        }}>{fmtDateTimeCaps(createdAt)}</div>
         <div style={{ fontFamily: SF, fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: T.text, lineHeight: 1.15 }}>
-          Список покупок<br/>
-          <span style={{ color: T.text2, fontWeight: 600 }}>от {date}</span>
+          Список покупок
         </div>
       </div>
 
@@ -921,11 +955,11 @@ function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, onAfterD
               </div>
               <div style={{
                 flex: 1, fontFamily: SF, fontSize: 16, letterSpacing: -0.32,
-                color: T.text2, textDecoration: 'line-through',
+                color: T.text2,
               }}>
                 {item.name}
                 {item.qty && (
-                  <span style={{ color: T.text3, marginLeft: 8, fontSize: 14 }}>{item.qty}</span>
+                  <span style={{ marginLeft: 8, fontSize: 14, color: 'currentColor', opacity: 0.7 }}>{item.qty}</span>
                 )}
               </div>
               {i < list.items.length - 1 && (
@@ -945,56 +979,23 @@ function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, onAfterD
       }}>
         <button onClick={doReuse} disabled={busy} style={{
           width: '100%', height: 52, borderRadius: 14,
-          background: T.text, border: 'none', color: T.inverseFg,
+          ...primary,
           fontFamily: SF, fontSize: 17, fontWeight: 600, letterSpacing: -0.4,
           cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexDirection: 'column', gap: 2,
         }}>
-          <span>{reuseLabel}</span>
-          <span style={{ fontSize: 12, fontWeight: 400, opacity: 0.6, letterSpacing: -0.08 }}>{reuseSub}</span>
+          {reuseLabel}
         </button>
       </div>
 
       {confirmDel && (
         <ConfirmSheet
           title="Удалить список?"
-          desc={`«Список от ${date}» будет удалён без возможности восстановления.`}
+          desc={`Список от ${dateForConfirm} будет удалён без возможности восстановления.`}
           confirmLabel="Удалить"
           onConfirm={doDelete}
           onCancel={() => setConfirmDel(false)}
         />
-      )}
-    </div>
-  );
-}
-
-// ─── telegram-style header ──────────────────────────────────
-function TgHeader({ onClose }) {
-  return (
-    <div style={{
-      background: T.tgHeader,
-      borderBottom: `0.5px solid ${T.sep}`,
-      display: 'flex', alignItems: 'center', gap: 10,
-      padding: '14px 14px 8px',
-    }}>
-      <div style={{
-        width: 32, height: 32, borderRadius: 16,
-        background: 'linear-gradient(135deg, #34C759, #30B0C7)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
-      }}>🛒</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: SF, fontSize: 15, fontWeight: 600, color: T.text, letterSpacing: -0.24 }}>Список покупок</div>
-        <div style={{ fontFamily: SF, fontSize: 12, color: T.text2, letterSpacing: -0.08 }}>mini app</div>
-      </div>
-      {onClose && (
-        <button onClick={onClose} style={{
-          width: 32, height: 32, borderRadius: 16, background: T.pillBg,
-          border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer',
-        }}>
-          <Icon.Close s={14}/>
-        </button>
       )}
     </div>
   );
@@ -1122,10 +1123,23 @@ function ShoppingApp() {
     closeApp();
   };
 
+  const onArchivePurchased = async () => {
+    if (!active) return;
+    const listId = active.id;
+    setActive(prev => prev ? { ...prev, items: prev.items.filter(it => !it.done) } : prev);
+    try {
+      await archivePurchasedApi(listId);
+    } catch (e) {
+      console.error('archive purchased failed', e);
+    }
+    refresh();
+  };
+
   const items = active ? active.items : [];
   const total = items.length;
   const done = items.filter(i => i.done).length;
   const allDone = total > 0 && done === total;
+  const ingestBusy = !!ingest && ingest.stage !== 'success' && ingest.stage !== 'error';
 
   if (view === 'archiveDetail') {
     return (
@@ -1155,7 +1169,7 @@ function ShoppingApp() {
   if (total === 0 && archiveCount === 0) {
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
-        <TgHeader/>
+        <div style={{ height: 64, flexShrink: 0 }}/>
         <StarterScreen onOpenChat={closeApp}/>
       </div>
     );
@@ -1164,7 +1178,7 @@ function ShoppingApp() {
   if (total === 0) {
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
-        <TgHeader/>
+        <div style={{ height: 64, flexShrink: 0 }}/>
         <EmptyState
           kind="done"
           onCreate={onCreate}
@@ -1178,14 +1192,15 @@ function ShoppingApp() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
-      <TgHeader/>
-
-      <div style={{ padding: '16px 22px 6px' }}>
-        <div style={{ fontFamily: SF, fontSize: 13, color: T.text2, letterSpacing: -0.08, textTransform: 'uppercase', fontWeight: 500, marginBottom: 4 }}>Активный список</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ fontFamily: SF, fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: T.text, lineHeight: 1.15 }}>
-            Список покупок<br/>
-            <span style={{ color: T.text2, fontWeight: 600 }}>от {fmtDate(new Date(active.created_at * 1000))}</span>
+      <div style={{ padding: '64px 22px 14px' }}>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+        }}>
+          <div style={{
+            fontFamily: SF, fontSize: 28, fontWeight: 700, letterSpacing: -0.5,
+            color: T.text, lineHeight: 1.15,
+          }}>
+            Список покупок
           </div>
           {archiveCount > 0 && (
             <button onClick={() => setView('archive')} style={{
@@ -1193,7 +1208,7 @@ function ShoppingApp() {
               padding: '7px 12px', borderRadius: 14,
               fontFamily: SF, fontSize: 13, color: T.blue, fontWeight: 500,
               cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
-              flexShrink: 0, marginTop: 8,
+              flexShrink: 0,
             }}>
               <Icon.Archive s={14}/>
               Архив · {archiveCount}
@@ -1202,7 +1217,7 @@ function ShoppingApp() {
         </div>
       </div>
 
-      <Progress done={done} total={total}/>
+      <Progress done={done} total={total} onArchivePurchased={onArchivePurchased}/>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 16px' }}>
         <div style={{
@@ -1233,7 +1248,7 @@ function ShoppingApp() {
       </div>
 
       <StatusBanner ingest={ingest}/>
-      <ChatHint/>
+      <ChatHint busy={ingestBusy}/>
 
       {editing && <EditSheet item={editing} onClose={() => setEditing(null)} onSave={onSaveEdit}/>}
       {confirmDeleteItem && (
