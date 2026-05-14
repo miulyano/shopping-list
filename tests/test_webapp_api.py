@@ -195,6 +195,40 @@ def test_delete_archive_unknown_404(client, headers):
     assert r.status_code == 404
 
 
+def test_archive_purchased_moves_done_items(client, headers):
+    ids = _seed_items([("A", None), ("B", None), ("C", None)])
+    client.post(f"/api/items/{ids[0]}/toggle", headers=headers)
+    client.post(f"/api/items/{ids[1]}/toggle", headers=headers)
+
+    state = client.get("/api/state", headers=headers).json()
+    active_id = state["active_list"]["id"]
+
+    r = client.post(f"/api/lists/{active_id}/archive-purchased", headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["moved"] == 2
+    assert body["archived_list_id"] != active_id
+
+    state2 = client.get("/api/state", headers=headers).json()
+    assert [i["name"] for i in state2["active_list"]["items"]] == ["c"]
+    assert state2["archive_count"] == 1
+
+
+def test_archive_purchased_404_when_nothing_done(client, headers):
+    _seed_items([("A", None)])
+    state = client.get("/api/state", headers=headers).json()
+    active_id = state["active_list"]["id"]
+    r = client.post(f"/api/lists/{active_id}/archive-purchased", headers=headers)
+    assert r.status_code == 404
+
+
+def test_archive_purchased_404_when_list_not_active(client, headers):
+    _seed_items([("A", None)])
+    archived_id = _archive_active()
+    r = client.post(f"/api/lists/{archived_id}/archive-purchased", headers=headers)
+    assert r.status_code == 404
+
+
 def test_state_returns_ingest_when_active(client, headers):
     from bot.db.store import connect
     from bot.services import ingest_state
