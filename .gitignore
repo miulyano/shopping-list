@@ -36,12 +36,14 @@ tmp/
 *.swp
 *.swo
 
-# Docker
-.dockerignore
-
 # SQLite + runtime state
 /data/
 
 # Design handoffs — local-only assets
 design/
+
+# Frontend build artifacts (Vite outputs into webapp/static/)
+/webapp/static/
+/webapp/frontend/node_modules/
+/webapp/frontend/dist/
 
