@@ -15,6 +15,7 @@
 - Добавлен `.dockerignore`, чтобы локальные `node_modules` и `.venv` не попадали в build-context.
 
 ### Added
+- Уведомления о добавлении товаров. Добавление в группе → ЛС каждому участнику whitelist, кроме автора. Добавление в ЛС с ботом → пост в привязанную группу (`TARGET_CHAT_ID`) с @упоминанием всех участников кроме автора (в forum-группе — в запиненный топик) И дублирующее ЛС каждому, кроме автора. В уведомлении — имя автора, список добавленных товаров и кнопка «🛒 Список». Новая таблица `users` (имена для упоминаний), middleware `UserCaptureMiddleware` (захват имён), сервис `bot/services/notify.py`. ЛС уходят только тем, кто стартовал бота приватно (остальное — best-effort, ошибки отправки не валят рассылку).
 - Vitest + jsdom + Testing Library: 50 фронтенд-тестов покрывают `format.ts`, `theme.ts`, `api/client.ts` (11 endpoints), `ItemRow`, `EditSheet`, `ConfirmSheet`, view-роутинг и polling `App`. Запуск — `npm run test` в `webapp/frontend`.
 
 ## [0.10.1] – 2026-05-14

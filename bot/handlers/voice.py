@@ -11,6 +11,7 @@ from bot.db.store import connect
 from bot.handlers._common import format_added, open_app_keyboard, success_status
 from bot.services import ingest_state
 from bot.services.media import to_mp3_16k_mono
+from bot.services.notify import notify_items_added
 from bot.services.parser import parse_text
 from bot.services.shopping import add_items
 from bot.services.transcriber import transcribe_audio
@@ -109,3 +110,8 @@ async def on_voice(message: Message) -> None:
         f"📝 «{text}»\n\n{format_added(len(names))}",
         reply_markup=open_app_keyboard(message.chat.type, me.username),
     )
+
+    if names:
+        await notify_items_added(
+            message.bot, message.from_user, message.chat.type, names
+        )

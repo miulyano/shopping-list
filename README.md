@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.11.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-0.12.0-blue" alt="version">
   <img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey" alt="license">
 </p>
 
@@ -24,6 +24,7 @@ Telegram-бот + Mini App для общего списка покупок. Пр
 - 👥 **Whitelist** — `ALLOWED_USER_IDS` ограничивает, кто может писать боту и открывать Mini App.
 - 💬 **Группа + личка** — бот работает в одном групповом чате (`TARGET_CHAT_ID`) и в DM whitelisted-юзеров. Список общий.
 - 🔔 **Статус в чате** — на каждое входящее сообщение бот шлёт промежуточный статус («📝 Разбираю…», «📷 Распознаю фото…», «🎙 Слушаю…») и заменяет его финалом «✓ Добавил N товаров». В групповом чате ответы привязаны reply'ем к исходному сообщению.
+- 🔔 **Уведомления другим участникам** — когда кто-то добавил товары, остальные узнают об этом. Добавление в группе → ЛС каждому участнику whitelist, кроме автора. Добавление в ЛС с ботом → пост в группу с @упоминанием всех участников кроме автора (в forum-группе — в запиненный топик) плюс дублирующее ЛС каждому, кроме автора. В уведомлении — имя автора, список добавленных товаров и кнопка «🛒 Список». ЛС доходят только тем, кто стартовал бота приватно.
 - 🛒 **Mini App из группы** — кнопка «🛒 Список» работает и в DM (через `WebAppInfo`), и в группе (через direct-link `t.me/<bot>/<short_name>`, см. `WEBAPP_SHORT_NAME`). При добавлении бота в группу он автоматически шлёт приветственное сообщение с кнопкой и пинит его. Если автопин не сработал — `/pin` в группе делает то же руками.
 
 **Команды бота:**
@@ -58,9 +59,12 @@ shopping-list/
 │   │   ├── voice.py            # F.voice — Whisper → парсер
 │   │   ├── photo.py            # F.photo — gpt-4o vision
 │   │   └── membership.py       # my_chat_member — приветствие+пин при добавлении в группу
-│   ├── middlewares/auth.py     # whitelist + chat filter + topic filter (pinned_thread_id)
+│   ├── middlewares/
+│   │   ├── auth.py             # whitelist + chat filter + topic filter (pinned_thread_id)
+│   │   └── user_capture.py     # сохранение имён авторизованных юзеров (для упоминаний)
 │   ├── services/
 │   │   ├── openai_client.py    # singleton AsyncOpenAI
+│   │   ├── notify.py           # рассылка уведомлений о добавлении (ЛС + пост в группу)
 │   │   ├── parser.py           # text → list[ParsedItem] (с распознаванием брендов)
 │   │   ├── name_format.py      # lowercase + canonical brand capitalization
 │   │   ├── transcriber.py      # voice → text via Whisper
@@ -71,8 +75,9 @@ shopping-list/
 │   │   ├── ingest_state.py     # прогресс ингеста для Mini App status banner
 │   │   └── temp_cleanup.py     # периодическая чистка TEMP_DIR
 │   └── db/
-│       ├── schema.sql          # lists, items, ingest_events, app_settings
+│       ├── schema.sql          # lists, items, ingest_events, app_settings, users
 │       ├── store.py            # connect, init_db
+│       ├── users.py            # upsert/get имён юзеров (для упоминаний)
 │       ├── settings_kv.py      # key/value стор (pinned_thread_id и т.п.)
 │       └── models.py
 ├── webapp/
