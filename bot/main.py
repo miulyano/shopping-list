@@ -17,6 +17,7 @@ from bot.config import settings
 from bot.db.store import init_db
 from bot.handlers import commands, membership, photo, text, voice
 from bot.middlewares.auth import AuthMiddleware
+from bot.middlewares.user_capture import UserCaptureMiddleware
 from bot.services.temp_cleanup import run_periodic_temp_cleanup
 
 
@@ -43,6 +44,7 @@ async def main() -> None:
     dp = Dispatcher()
     auth = AuthMiddleware()
     dp.message.middleware(auth)
+    dp.message.middleware(UserCaptureMiddleware())
     dp.my_chat_member.middleware(auth)
 
     dp.include_router(commands.router)

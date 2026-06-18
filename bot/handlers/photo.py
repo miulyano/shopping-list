@@ -10,6 +10,7 @@ from bot.config import settings
 from bot.db.store import connect
 from bot.handlers._common import format_added, open_app_keyboard, success_status
 from bot.services import ingest_state
+from bot.services.notify import notify_items_added
 from bot.services.shopping import add_items
 from bot.services.vision import parse_image
 
@@ -69,3 +70,8 @@ async def on_photo(message: Message) -> None:
         format_added(len(names)),
         reply_markup=open_app_keyboard(message.chat.type, me.username),
     )
+
+    if names:
+        await notify_items_added(
+            message.bot, message.from_user, message.chat.type, names
+        )
