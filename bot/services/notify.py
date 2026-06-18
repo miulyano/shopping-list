@@ -9,7 +9,6 @@ from aiogram.types import User
 from bot.config import settings
 from bot.db.settings_kv import PINNED_THREAD_ID_KEY, get_setting
 from bot.db.store import connect
-from bot.db.users import UserName, get_users
 from bot.handlers._common import open_app_keyboard, plural_ru
 
 
@@ -28,13 +27,28 @@ def _display_name_from_user(u: User) -> str:
     return "кто-то"
 
 
-def _display_name_from_record(uid: int, rec: UserName | None) -> str:
-    if rec is not None:
-        if rec.first_name:
-            return rec.first_name
-        if rec.username:
-            return f"@{rec.username}"
-    return "участник"
+async def _mentions(bot: Bot, chat_id: int, user_ids: list[int]) -> list[str]:
+    """Build `@username` tags for current members of `chat_id`.
+
+    Username is read live from Telegram via `get_chat_member`, so it is always
+    current and needs no prior interaction with the bot. A member without a
+    public username cannot be tagged at all (the only alternative is a
+    `tg://user?id=` link, which we deliberately don't use), so they are simply
+    skipped — they still receive a DM elsewhere. Members who left the chat or
+    fail to resolve are skipped too.
+    """
+    tags: list[str] = []
+    for uid in user_ids:
+        try:
+            member = await bot.get_chat_member(chat_id, uid)
+        except Exception:
+            logger.info("get_chat_member failed for %s", uid)
+            continue
+        if member.status in ("left", "kicked"):
+            continue
+        if member.user.username:
+            tags.append(f"@{member.user.username}")
+    return tags
 
 
 def _items_block(adder_name: str, names: list[str]) -> str:
@@ -80,15 +94,10 @@ async def notify_items_added(
     # Group post — only when the add came from a private chat and a group is set.
     if chat_type == "private" and settings.TARGET_CHAT_ID is not None:
         async with connect() as db:
-            known = await get_users(db, recipients)
             pinned = await get_setting(db, PINNED_THREAD_ID_KEY)
         thread_id = int(pinned) if pinned and pinned != "0" else None
-        mentions = ", ".join(
-            f'<a href="tg://user?id={uid}">'
-            f"{html.escape(_display_name_from_record(uid, known.get(uid)))}</a>"
-            for uid in recipients
-        )
-        group_text = f"{body}\n\n{mentions}"
+        tags = await _mentions(bot, settings.TARGET_CHAT_ID, recipients)
+        group_text = f"{body}\n\n{', '.join(tags)}" if tags else body
         try:
             await bot.send_message(
                 settings.TARGET_CHAT_ID,

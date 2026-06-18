@@ -4,14 +4,21 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.config import settings
-from bot.db.users import upsert_user
 from bot.services.notify import notify_items_added
 
 
-def make_bot():
+def member(username="bob", first_name="Bob", status="member"):
+    return SimpleNamespace(
+        status=status,
+        user=SimpleNamespace(username=username, first_name=first_name),
+    )
+
+
+def make_bot(chat_member=None):
     bot = MagicMock()
     bot.send_message = AsyncMock()
     bot.me = AsyncMock(return_value=SimpleNamespace(username="testbot"))
+    bot.get_chat_member = AsyncMock(return_value=chat_member or member())
     return bot
 
 
@@ -55,13 +62,13 @@ async def test_group_add_dms_others_only(monkeypatch):
     assert "молоко" in call.args[1] and "хлеб" in call.args[1]
     kb = call.kwargs["reply_markup"]
     assert kb.inline_keyboard[0][0].web_app is not None
+    bot.get_chat_member.assert_not_called()  # group path not taken
 
 
 @pytest.mark.asyncio
 async def test_private_add_posts_group_and_dms(db, monkeypatch):
     monkeypatch.setitem(settings.__dict__, "allowed_user_ids", [111, 222])
-    await upsert_user(db, 222, "Bob", "bob")
-    bot = make_bot()
+    bot = make_bot(member(username="bob"))
     await notify_items_added(bot, adder(), "private", ["молоко"])
 
     targets = [c.args[0] for c in bot.send_message.call_args_list]
@@ -72,14 +79,14 @@ async def test_private_add_posts_group_and_dms(db, monkeypatch):
         c for c in bot.send_message.call_args_list
         if c.args[0] == settings.TARGET_CHAT_ID
     )
-    assert 'tg://user?id=222' in group_call.args[1]
-    assert "Bob" in group_call.args[1]
+    assert "@bob" in group_call.args[1]
+    assert "tg://" not in group_call.args[1]
     assert "молоко" in group_call.args[1]
     assert group_call.kwargs["reply_markup"].inline_keyboard[0][0].url is not None
 
 
 @pytest.mark.asyncio
-async def test_private_add_no_group_when_target_none(db, monkeypatch):
+async def test_private_add_no_group_when_target_none(monkeypatch):
     monkeypatch.setitem(settings.__dict__, "allowed_user_ids", [111, 222])
     monkeypatch.setattr(settings, "TARGET_CHAT_ID", None)
     bot = make_bot()
@@ -90,7 +97,7 @@ async def test_private_add_no_group_when_target_none(db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_blocked_dm_does_not_abort_fanout(db, monkeypatch):
+async def test_blocked_dm_does_not_abort_fanout(monkeypatch):
     monkeypatch.setitem(settings.__dict__, "allowed_user_ids", [111, 222, 333])
     monkeypatch.setattr(settings, "TARGET_CHAT_ID", None)
 
@@ -108,21 +115,51 @@ async def test_blocked_dm_does_not_abort_fanout(db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_group_mention_fallback_for_unknown_name(db, monkeypatch):
+async def test_usernameless_member_skipped_from_tag_still_dmed(db, monkeypatch):
     monkeypatch.setitem(settings.__dict__, "allowed_user_ids", [111, 222])
-    bot = make_bot()
+    bot = make_bot(member(username=None))  # no public username
     await notify_items_added(bot, adder(), "private", ["молоко"])
 
     group_call = next(
         c for c in bot.send_message.call_args_list
         if c.args[0] == settings.TARGET_CHAT_ID
     )
-    assert 'tg://user?id=222' in group_call.args[1]
-    assert "участник" in group_call.args[1]
+    # no tag of any kind for the usernameless member, but post still sent
+    assert "@" not in group_call.args[1]
+    assert "tg://" not in group_call.args[1]
+    assert "молоко" in group_call.args[1]
+    # DM still delivered
+    assert 222 in [c.args[0] for c in bot.send_message.call_args_list]
 
 
 @pytest.mark.asyncio
-async def test_html_escape(db, monkeypatch):
+async def test_left_member_not_tagged(db, monkeypatch):
+    monkeypatch.setitem(settings.__dict__, "allowed_user_ids", [111, 222])
+    bot = make_bot(member(username="bob", status="left"))
+    await notify_items_added(bot, adder(), "private", ["молоко"])
+
+    group_call = next(
+        c for c in bot.send_message.call_args_list
+        if c.args[0] == settings.TARGET_CHAT_ID
+    )
+    assert "@bob" not in group_call.args[1]
+
+
+@pytest.mark.asyncio
+async def test_get_chat_member_error_skips_tag(db, monkeypatch):
+    monkeypatch.setitem(settings.__dict__, "allowed_user_ids", [111, 222])
+    bot = make_bot()
+    bot.get_chat_member.side_effect = RuntimeError("boom")
+    await notify_items_added(bot, adder(), "private", ["молоко"])
+
+    # group post still sent (no tags), DM still delivered
+    targets = [c.args[0] for c in bot.send_message.call_args_list]
+    assert settings.TARGET_CHAT_ID in targets
+    assert 222 in targets
+
+
+@pytest.mark.asyncio
+async def test_html_escape(monkeypatch):
     monkeypatch.setitem(settings.__dict__, "allowed_user_ids", [111, 222])
     monkeypatch.setattr(settings, "TARGET_CHAT_ID", None)
     bot = make_bot()
