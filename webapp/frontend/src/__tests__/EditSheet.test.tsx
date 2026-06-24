@@ -43,6 +43,14 @@ describe('EditSheet', () => {
     expect(onSave).toHaveBeenCalled();
   });
 
+  it('saves the selected category', () => {
+    const onSave = vi.fn();
+    render(<EditSheet item={item} onClose={vi.fn()} onSave={onSave} />);
+    fireEvent.click(screen.getByText('Бытовые товары'));
+    fireEvent.click(screen.getByText('Готово'));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ category: 'home' }));
+  });
+
   it('calls onClose when Отмена clicked', () => {
     const onClose = vi.fn();
     render(<EditSheet item={item} onClose={onClose} onSave={vi.fn()} />);

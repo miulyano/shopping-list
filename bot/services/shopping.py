@@ -175,17 +175,24 @@ async def update_item(
     item_id: int,
     name: str,
     qty: Optional[str],
+    category: Optional[str] = None,
 ) -> Optional[int]:
-    """Update item name/qty. Returns list_id or None if item not found."""
+    """Update item name/qty (and category when given). Returns list_id or None."""
     row = await (await db.execute(
         "SELECT list_id FROM items WHERE id=?", (item_id,)
     )).fetchone()
     if not row:
         return None
-    await db.execute(
-        "UPDATE items SET name=?, qty=? WHERE id=?",
-        (name.strip(), qty.strip() if qty else None, item_id),
-    )
+    if category is not None:
+        await db.execute(
+            "UPDATE items SET name=?, qty=?, category=? WHERE id=?",
+            (name.strip(), qty.strip() if qty else None, category, item_id),
+        )
+    else:
+        await db.execute(
+            "UPDATE items SET name=?, qty=? WHERE id=?",
+            (name.strip(), qty.strip() if qty else None, item_id),
+        )
     await db.commit()
     return row["list_id"]
 

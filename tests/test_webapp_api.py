@@ -158,6 +158,30 @@ def test_patch_item_updates_name_and_qty(client, headers):
     assert item["qty"] == "2 л"
 
 
+def test_patch_item_updates_category(client, headers):
+    [item_id] = _seed_items([("Молоко", "1 л")])
+    r = client.patch(
+        f"/api/items/{item_id}",
+        headers=headers,
+        json={"name": "Молоко", "qty": "1 л", "category": "home"},
+    )
+    assert r.status_code == 200
+    assert r.json()["category"] == "home"
+    state = client.get("/api/state", headers=headers).json()
+    assert state["active_list"]["items"][0]["category"] == "home"
+
+
+def test_patch_item_normalizes_bad_category(client, headers):
+    [item_id] = _seed_items([("Молоко", "1 л")])
+    r = client.patch(
+        f"/api/items/{item_id}",
+        headers=headers,
+        json={"name": "Молоко", "qty": "1 л", "category": "garbage"},
+    )
+    assert r.status_code == 200
+    assert r.json()["category"] == "food"
+
+
 def test_patch_item_rejects_blank_name(client, headers):
     [item_id] = _seed_items([("Молоко", "1 л")])
     r = client.patch(

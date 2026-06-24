@@ -68,6 +68,16 @@ describe('api client', () => {
     }));
   });
 
+  it('PATCH /api/items/:id includes category when provided', async () => {
+    const f = vi.fn().mockReturnValue(okJson({}));
+    vi.stubGlobal('fetch', f);
+    await patchItemApi(7, { name: 'молоко', qty: '1 л', category: 'home' });
+    expect(f).toHaveBeenCalledWith('/api/items/7', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ name: 'молоко', qty: '1 л', category: 'home' }),
+    }));
+  });
+
   it('DELETE /api/items/:id', async () => {
     const f = vi.fn().mockReturnValue(okJson({}));
     vi.stubGlobal('fetch', f);

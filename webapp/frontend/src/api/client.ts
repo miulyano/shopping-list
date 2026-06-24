@@ -37,8 +37,8 @@ export const setItemDoneApi = (id: number, done: boolean): Promise<ApiSetDoneRes
   api(`/api/items/${id}/state`, { method: 'POST', body: JSON.stringify({ done }) });
 export const patchItemApi = (
   id: number,
-  body: { name: string; qty: string | null },
-): Promise<{ id: number; list_id: number; name: string; qty: string | null }> =>
+  body: { name: string; qty: string | null; category?: string },
+): Promise<{ id: number; list_id: number; name: string; qty: string | null; category?: string }> =>
   api(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 export const deleteItemApi = (
   id: number,
