@@ -40,9 +40,15 @@ export function GroupedList({ items, onToggle, onEdit, onDelete, openId, setOpen
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
+    // Measure each row's offset RELATIVE to the list root, not the viewport.
+    // A viewport-relative top changes on every scroll (and on any layout shift
+    // above the list, e.g. the status banner), which made the FLIP fire on each
+    // 2s poll re-render — a constant flicker. Relative offset is scroll- and
+    // layout-invariant, so the animation only runs on a real reorder (toggle).
+    const rootTop = root.getBoundingClientRect().top;
     const nodes = root.querySelectorAll<HTMLElement>('[data-flip-id]');
     const next = new Map<string, number>();
-    nodes.forEach((n) => next.set(n.getAttribute('data-flip-id')!, n.getBoundingClientRect().top));
+    nodes.forEach((n) => next.set(n.getAttribute('data-flip-id')!, n.getBoundingClientRect().top - rootTop));
     next.forEach((top, id) => {
       const prev = prevPos.current.get(id);
       if (prev != null && Math.abs(prev - top) > 0.5) {
