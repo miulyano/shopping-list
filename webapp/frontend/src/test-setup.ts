@@ -8,6 +8,7 @@ import { cleanup } from '@testing-library/react';
 // baseline the test suite assumes.
 interface MockWebApp {
   initData: string;
+  initDataUnsafe?: { start_param?: string };
   platform: string;
   colorScheme: 'light' | 'dark';
   isFullscreen: boolean;
@@ -23,6 +24,7 @@ interface MockWebApp {
 
 const mockWebApp: MockWebApp = {
   initData: 'test_init_data',
+  initDataUnsafe: undefined,
   platform: 'unknown',
   colorScheme: 'light',
   isFullscreen: false,

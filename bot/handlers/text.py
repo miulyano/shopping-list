@@ -8,7 +8,7 @@ from bot.handlers._common import format_added, open_app_keyboard, success_status
 from bot.services import ingest_state
 from bot.services.notify import notify_items_added
 from bot.services.parser import parse_text
-from bot.services.shopping import add_items
+from bot.services.shopping import add_items, get_named_lists, resolve_target_list
 
 
 router = Router()
@@ -35,7 +35,9 @@ async def on_text(message: Message) -> None:
         )
 
     try:
-        parsed = await parse_text(text)
+        async with connect() as db:
+            list_names = [nl.name for nl in await get_named_lists(db)]
+        parsed, list_hint = await parse_text(text, list_names)
     except Exception:
         logger.exception("Text parse failed")
         async with connect() as db:
@@ -54,18 +56,23 @@ async def on_text(message: Message) -> None:
         return
 
     async with connect() as db:
-        _, names = await add_items(db, parsed, message.from_user.id)
+        target, _mentioned, unresolved = await resolve_target_list(db, list_hint)
+        list_id_target = target.id if target else None
+        _, names = await add_items(db, parsed, message.from_user.id, list_id_target)
         added = [{"name": p.name, "qty": p.qty} for p in parsed if p.name.strip()]
-        title, sub = success_status(names)
+        list_name = target.name if target else None
+        list_key = target.key if target else None
+        title, sub = success_status(names, list_name, unresolved)
         await ingest_state.finish_success(db, event_id, added, title, sub)
 
     me = await message.bot.me()
     await notice.edit_text(
-        format_added(len(names)),
-        reply_markup=open_app_keyboard(message.chat.type, me.username),
+        format_added(len(names), list_name, unresolved),
+        reply_markup=open_app_keyboard(message.chat.type, me.username, list_key),
     )
 
     if names:
         await notify_items_added(
-            message.bot, message.from_user, message.chat.type, names
+            message.bot, message.from_user, message.chat.type, names,
+            list_name=list_name, list_key=list_key, unresolved=unresolved,
         )

@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { T, useTheme } from './theme';
 import { TOP_INSET, SF } from './lib/constants';
-import { closeApp } from './lib/telegram';
+import { closeApp, getStartList } from './lib/telegram';
 import { Icon } from './icons';
 import {
   archivePurchasedApi,
   deleteItemApi,
   fetchState,
-  newListApi,
+  moveItemApi,
   patchItemApi,
   setItemDoneApi,
 } from './api/client';
-import type { ApiIngest, ApiItem, ApiList } from './types';
+import type { ApiIngest, ApiItem, ApiList, NamedList } from './types';
 
 function sortItems(items: ApiItem[]): ApiItem[] {
   return [...items].sort((a, b) => {
@@ -23,6 +23,9 @@ function sortItems(items: ApiItem[]): ApiItem[] {
   });
 }
 import { GroupedList } from './components/GroupedList';
+import type { OpenRow } from './components/ItemRow';
+import { ListTabs } from './components/ListTabs';
+import { MoveSheet } from './components/MoveSheet';
 import { EditSheet } from './components/EditSheet';
 import { ConfirmSheet } from './components/ConfirmSheet';
 import { Progress } from './components/Progress';
@@ -46,12 +49,15 @@ export function App() {
   // (and may re-run in concurrent mode), so side effects derived from them
   // are unsafe — we keep a ref instead.
   const activeRef = useRef<ApiList | null>(null);
+  const [lists, setLists] = useState<NamedList[]>([]);
+  const [activeListId, setActiveListId] = useState<number | null>(null);
   const [archiveCount, setArchiveCount] = useState(0);
   const [ingest, setIngest] = useState<ApiIngest | null>(null);
   const [view, setView] = useState<View>('list');
   const [openArchiveId, setOpenArchiveId] = useState<number | null>(null);
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useState<OpenRow>(null);
   const [editing, setEditing] = useState<ApiItem | null>(null);
+  const [moving, setMoving] = useState<ApiItem | null>(null);
   const [confirmDeleteItem, setConfirmDeleteItem] = useState<ApiItem | null>(null);
   const [archivedFlash, setArchivedFlash] = useState(false);
   const lastIngestId = useRef<number | null>(null);
@@ -60,6 +66,9 @@ export function App() {
   // optimistic done/checked_at with stale server values until the toggle
   // request and its echo settle.
   const pendingItems = useRef<Set<number>>(new Set());
+  // Items mid-move: keep their optimistic named_list_id until the server echoes
+  // the new bucket, so a poll doesn't snap the row back to the old tab.
+  const pendingMoves = useRef<Map<number, number>>(new Map());
   // Latest desired done per item id while a request is in flight. The worker
   // drains this map to coalesce rapid taps into at most one extra request.
   const desiredDone = useRef<Map<number, boolean>>(new Map());
@@ -67,16 +76,32 @@ export function App() {
   const refresh = async () => {
     try {
       const data = await fetchState();
+      setLists(data.lists || []);
+      setActiveListId((prev) => {
+        const ls = data.lists || [];
+        if (prev != null && ls.some((l) => l.id === prev)) return prev;
+        const startKey = getStartList();
+        const byKey = startKey ? ls.find((l) => l.key === startKey) : undefined;
+        if (byKey) return byKey.id;
+        const def = ls.find((l) => l.is_default) || ls[0];
+        return def ? def.id : null;
+      });
       setActive((prev) => {
         const next = data.active_list;
         if (!next) return next;
-        if (!prev || pendingItems.current.size === 0) return next;
+        if (!prev || (pendingItems.current.size === 0 && pendingMoves.current.size === 0)) {
+          return next;
+        }
         const merged = next.items.map((srv) => {
-          if (!pendingItems.current.has(srv.id)) return srv;
-          const local = prev.items.find((i) => i.id === srv.id);
-          return local
-            ? { ...srv, done: local.done, checked_at: local.checked_at }
-            : srv;
+          let row = srv;
+          if (pendingItems.current.has(srv.id)) {
+            const local = prev.items.find((i) => i.id === srv.id);
+            if (local) row = { ...row, done: local.done, checked_at: local.checked_at };
+          }
+          if (pendingMoves.current.has(srv.id)) {
+            row = { ...row, named_list_id: pendingMoves.current.get(srv.id)! };
+          }
+          return row;
         });
         return { ...next, items: sortItems(merged) };
       });
@@ -212,6 +237,24 @@ export function App() {
     }
   };
 
+  const onMove = async (id: number, namedListId: number) => {
+    setMoving(null);
+    setOpenId(null);
+    pendingMoves.current.set(id, namedListId);
+    setActive((prev) => prev ? {
+      ...prev,
+      items: prev.items.map((it) => (it.id === id ? { ...it, named_list_id: namedListId } : it)),
+    } : prev);
+    try {
+      await moveItemApi(id, namedListId);
+    } catch (e) {
+      console.error('move failed', e);
+    } finally {
+      pendingMoves.current.delete(id);
+      refresh();
+    }
+  };
+
   const onDeleteItem = async (id: number) => {
     setActive((prev) => prev ? { ...prev, items: prev.items.filter((it) => it.id !== id) } : prev);
     try {
@@ -222,31 +265,31 @@ export function App() {
     }
   };
 
-  const onCreate = async () => {
-    try {
-      await newListApi();
-    } catch (e) {
-      console.error('new list failed', e);
-    }
-    closeApp();
-  };
-
   const onArchivePurchased = async () => {
-    if (!active) return;
+    if (!active || activeListId == null) return;
     const listId = active.id;
-    setActive((prev) => prev ? { ...prev, items: prev.items.filter((it) => !it.done) } : prev);
+    const bucket = activeListId;
+    const dlt = lists.find((l) => l.is_default)?.id ?? lists[0]?.id ?? null;
+    setActive((prev) => prev ? {
+      ...prev,
+      items: prev.items.filter((it) => !(it.done && (it.named_list_id ?? dlt) === bucket)),
+    } : prev);
     try {
-      await archivePurchasedApi(listId);
+      await archivePurchasedApi(listId, bucket);
     } catch (e) {
       console.error('archive purchased failed', e);
     }
     refresh();
   };
 
-  const items = active ? active.items : [];
+  const allItems = active ? active.items : [];
+  const defaultListId = lists.find((l) => l.is_default)?.id ?? lists[0]?.id ?? null;
+  const inList = (it: ApiItem) => (it.named_list_id ?? defaultListId) === activeListId;
+  const items = allItems.filter(inList);
   const total = items.length;
   const done = items.filter((i) => i.done).length;
   const allDone = total > 0 && done === total;
+  const canMove = lists.length > 1;
   const ingestBusy = !!ingest && ingest.stage !== 'success' && ingest.stage !== 'error';
 
   if (view === 'archiveDetail' && openArchiveId !== null) {
@@ -254,6 +297,7 @@ export function App() {
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
         <ArchiveDetailScreen
           listId={openArchiveId}
+          lists={lists}
           hasActive={total > 0}
           onBack={() => setView('archive')}
           onAfterReuse={() => { setView('list'); refresh(); }}
@@ -267,6 +311,7 @@ export function App() {
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg }}>
         <ArchiveScreen
+          lists={lists}
           onBack={() => setView('list')}
           onOpen={(id) => { setOpenArchiveId(id); setView('archiveDetail'); }}
         />
@@ -274,7 +319,8 @@ export function App() {
     );
   }
 
-  if (total === 0 && archiveCount === 0) {
+  // First-launch: every list empty AND no archives.
+  if (allItems.length === 0 && archiveCount === 0) {
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
         <div style={{ height: TOP_INSET, flexShrink: 0 }}/>
@@ -283,77 +329,88 @@ export function App() {
     );
   }
 
-  if (total === 0) {
-    return (
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
-        <div style={{ height: TOP_INSET, flexShrink: 0 }}/>
-        <EmptyState
-          kind="done"
-          onCreate={onCreate}
-          archiveCount={archiveCount}
-          onOpenArchive={() => setView('archive')}
-        />
-        <StatusBanner ingest={ingest}/>
-      </div>
-    );
-  }
-
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, position: 'relative' }}>
-      <div style={{ padding: `${TOP_INSET}px 22px 14px` }}>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
-        }}>
-          <div style={{
-            fontFamily: SF, fontSize: 28, fontWeight: 700, letterSpacing: -0.5,
-            color: T.text, lineHeight: 1.15,
-          }}>
-            Список покупок
+      {/* header — list tabs as title (or plain title for a single list) + archive pill */}
+      <div style={{ padding: `${TOP_INSET}px 0 0` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, paddingRight: 16 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {lists.length > 1 ? (
+              <ListTabs
+                lists={lists}
+                activeId={activeListId}
+                onChange={(id) => { setActiveListId(id); setOpenId(null); }}
+              />
+            ) : (
+              <div style={{
+                fontFamily: SF, fontSize: 28, fontWeight: 700, letterSpacing: -0.5,
+                color: T.text, padding: '0 22px',
+              }}>Список покупок</div>
+            )}
           </div>
           {archiveCount > 0 && (
-            <button onClick={() => setView('archive')} style={{
-              background: T.pillBg, border: 'none',
-              padding: '7px 12px', borderRadius: 14,
-              fontFamily: SF, fontSize: 13, color: T.blue, fontWeight: 500,
-              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
-              flexShrink: 0,
+            <button onClick={() => setView('archive')} aria-label="Архив" style={{
+              flexShrink: 0, height: 34, padding: '0 11px', borderRadius: 17,
+              background: T.blue + '1F', border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 6,
             }}>
-              <Icon.Archive s={14}/>
-              Архив · {archiveCount}
+              <Icon.Archive s={17} c={T.blue}/>
+              <span style={{
+                fontFamily: SF, fontSize: 13.5, fontWeight: 700, color: T.blue,
+                fontVariantNumeric: 'tabular-nums',
+              }}>{archiveCount > 99 ? '99+' : archiveCount}</span>
             </button>
           )}
         </div>
       </div>
 
-      <Progress done={done} total={total} onArchivePurchased={onArchivePurchased}/>
-
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 16px' }}>
-        <div style={{
-          opacity: (allDone || archivedFlash) ? 0.6 : 1, transition: 'opacity 0.3s',
-        }}>
-          <GroupedList
-            items={items}
-            onToggle={onToggle}
-            onEdit={(it) => setEditing(it)}
-            onDelete={(it) => setConfirmDeleteItem(it)}
-            openId={openId}
-            setOpenId={setOpenId}
-          />
+      {total > 0 && (
+        <div style={{ paddingTop: 14 }}>
+          <Progress done={done} total={total} onArchivePurchased={onArchivePurchased}/>
         </div>
-        {(allDone || archivedFlash) && (
+      )}
+
+      {total === 0 ? (
+        <EmptyState
+          kind="empty"
+          onCreate={closeApp}
+          archiveCount={archiveCount}
+          onOpenArchive={() => setView('archive')}
+        />
+      ) : (
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 16px' }}>
           <div style={{
-            textAlign: 'center', padding: '20px 0 8px',
-            fontFamily: SF, fontSize: 15, color: T.accent, fontWeight: 500, letterSpacing: -0.24,
+            opacity: (allDone || archivedFlash) ? 0.6 : 1, transition: 'opacity 0.3s',
           }}>
-            ✓ Все товары куплены — переношу в архив...
+            <GroupedList
+              items={items}
+              onToggle={onToggle}
+              onEdit={(it) => setEditing(it)}
+              onDelete={(it) => setConfirmDeleteItem(it)}
+              onMove={(it) => setMoving(it)}
+              canMove={canMove}
+              openId={openId}
+              setOpenId={setOpenId}
+            />
           </div>
-        )}
-      </div>
+          {(allDone || archivedFlash) && (
+            <div style={{
+              textAlign: 'center', padding: '20px 0 8px',
+              fontFamily: SF, fontSize: 15, color: T.accent, fontWeight: 500, letterSpacing: -0.24,
+            }}>
+              ✓ Все товары куплены — переношу в архив...
+            </div>
+          )}
+        </div>
+      )}
 
       <StatusBanner ingest={ingest}/>
-      <ChatHint busy={ingestBusy}/>
+      {total > 0 && <ChatHint busy={ingestBusy}/>}
 
       {editing && <EditSheet item={editing} onClose={() => setEditing(null)} onSave={onSaveEdit}/>}
+      {moving && (
+        <MoveSheet item={moving} lists={lists} onClose={() => setMoving(null)} onMove={onMove}/>
+      )}
       {confirmDeleteItem && (
         <ConfirmSheet
           title="Удалить товар?"

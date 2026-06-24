@@ -11,7 +11,11 @@ from bot.db.store import connect
 from bot.handlers._common import format_added, open_app_keyboard, success_status
 from bot.services import ingest_state
 from bot.services.notify import notify_items_added
-from bot.services.shopping import add_items
+from bot.services.shopping import (
+    add_items,
+    default_named_list,
+    match_named_list_in_text,
+)
 from bot.services.vision import parse_image
 
 
@@ -60,18 +64,26 @@ async def on_photo(message: Message) -> None:
         return
 
     async with connect() as db:
-        _, names = await add_items(db, parsed, message.from_user.id)
+        # Photo caption is the only place a target list can be named here.
+        target = await match_named_list_in_text(db, message.caption)
+        if target is None:
+            target = await default_named_list(db)
+        list_id_target = target.id if target else None
+        _, names = await add_items(db, parsed, message.from_user.id, list_id_target)
         added = [{"name": p.name, "qty": p.qty} for p in parsed if p.name.strip()]
-        title, sub = success_status(names)
+        list_name = target.name if target else None
+        list_key = target.key if target else None
+        title, sub = success_status(names, list_name)
         await ingest_state.finish_success(db, event_id, added, title, sub)
 
     me = await message.bot.me()
     await notice.edit_text(
-        format_added(len(names)),
-        reply_markup=open_app_keyboard(message.chat.type, me.username),
+        format_added(len(names), list_name),
+        reply_markup=open_app_keyboard(message.chat.type, me.username, list_key),
     )
 
     if names:
         await notify_items_added(
-            message.bot, message.from_user, message.chat.type, names
+            message.bot, message.from_user, message.chat.type, names,
+            list_name=list_name, list_key=list_key,
         )

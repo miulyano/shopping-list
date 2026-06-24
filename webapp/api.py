@@ -15,7 +15,9 @@ from bot.services.shopping import (
     ensure_active_list,
     get_archive,
     get_archive_list,
+    get_named_lists,
     get_state,
+    move_item,
     reuse_archive_list,
     set_item_done,
     update_item,
@@ -45,6 +47,7 @@ def _list_to_dict(lst) -> dict:
         "id": lst.id,
         "created_at": lst.created_at,
         "archived_at": lst.archived_at,
+        "named_list_id": lst.named_list_id,
         "items": [
             {
                 "id": i.id,
@@ -53,9 +56,21 @@ def _list_to_dict(lst) -> dict:
                 "done": i.done,
                 "position": i.position,
                 "category": i.category,
+                "named_list_id": i.named_list_id,
             }
             for i in lst.items
         ],
+    }
+
+
+def _named_list_to_dict(nl) -> dict:
+    return {
+        "id": nl.id,
+        "key": nl.key,
+        "name": nl.name,
+        "color": nl.color,
+        "position": nl.position,
+        "is_default": nl.is_default,
     }
 
 
@@ -81,16 +96,26 @@ class ItemState(BaseModel):
     done: bool
 
 
+class ItemMove(BaseModel):
+    named_list_id: int
+
+
+class ArchivePurchased(BaseModel):
+    named_list_id: int | None = None
+
+
 @router.get("/state")
 async def state(user_id: int = Depends(current_user)) -> dict:
     async with connect() as db:
         active = await get_state(db)
         cnt = await archive_count(db)
         ev = await ingest_state.get_active(db, user_id)
+        lists = await get_named_lists(db)
     return {
         "active_list": _list_to_dict(active) if active else None,
         "archive_count": cnt,
         "ingest": _ingest_to_dict(ev) if ev else None,
+        "lists": [_named_list_to_dict(nl) for nl in lists],
     }
 
 
@@ -137,8 +162,13 @@ async def set_state(
         result = await set_item_done(db, item_id, user_id, payload.done)
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
-    list_id, done, archived = result
-    return {"list_id": list_id, "done": done, "archived": archived}
+    list_id, done, archived_named_list_id = result
+    return {
+        "list_id": list_id,
+        "done": done,
+        "archived": archived_named_list_id is not None,
+        "archived_named_list_id": archived_named_list_id,
+    }
 
 
 @router.patch("/items/{item_id}")
@@ -164,6 +194,17 @@ async def patch_item(
     }
 
 
+@router.post("/items/{item_id}/move")
+async def move_item_endpoint(
+    item_id: int, payload: ItemMove, _: int = Depends(current_user)
+) -> dict:
+    async with connect() as db:
+        list_id = await move_item(db, item_id, payload.named_list_id)
+    if list_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
+    return {"id": item_id, "list_id": list_id, "named_list_id": payload.named_list_id}
+
+
 @router.delete("/items/{item_id}")
 async def remove_item(item_id: int, _: int = Depends(current_user)) -> dict:
     async with connect() as db:
@@ -175,10 +216,13 @@ async def remove_item(item_id: int, _: int = Depends(current_user)) -> dict:
 
 @router.post("/lists/{list_id}/archive-purchased")
 async def list_archive_purchased(
-    list_id: int, _: int = Depends(current_user)
+    list_id: int,
+    payload: ArchivePurchased | None = None,
+    _: int = Depends(current_user),
 ) -> dict:
+    named_list_id = payload.named_list_id if payload else None
     async with connect() as db:
-        result = await archive_purchased(db, list_id)
+        result = await archive_purchased(db, list_id, named_list_id)
     if result is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, "active list not found or nothing to archive"

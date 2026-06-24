@@ -185,3 +185,30 @@ async def test_group_post_uses_pinned_thread(db, monkeypatch):
         if c.args[0] == settings.TARGET_CHAT_ID
     )
     assert group_call.kwargs["message_thread_id"] == 7
+
+
+@pytest.mark.asyncio
+async def test_list_name_in_body_and_deep_link(monkeypatch):
+    monkeypatch.setitem(settings.__dict__, "allowed_user_ids", [111, 222])
+    monkeypatch.setattr(settings, "TARGET_CHAT_ID", None)
+    bot = make_bot()
+    await notify_items_added(
+        bot, adder(), "private", ["сыр"],
+        list_name="Тата", list_key="tata",
+    )
+    dm = bot.send_message.call_args_list[0]
+    assert "в список «Тата»" in dm.args[1]
+    assert dm.kwargs["reply_markup"].inline_keyboard[0][0].web_app.url.endswith("#list=tata")
+
+
+@pytest.mark.asyncio
+async def test_unresolved_list_warning_in_body(monkeypatch):
+    monkeypatch.setitem(settings.__dict__, "allowed_user_ids", [111, 222])
+    monkeypatch.setattr(settings, "TARGET_CHAT_ID", None)
+    bot = make_bot()
+    await notify_items_added(
+        bot, adder(), "private", ["сыр"],
+        list_name="Общее", list_key="general", unresolved=True,
+    )
+    dm = bot.send_message.call_args_list[0]
+    assert "Не распознал" in dm.args[1]

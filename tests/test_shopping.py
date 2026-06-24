@@ -102,10 +102,13 @@ async def test_set_done_marks_and_records_user(db):
     assert result is not None
     list_id, done, archived = result
     assert done is True
-    assert archived is True  # only one item, marking it done archives the list
+    # only item bought → its named list is archived; `archived` is its id
+    assert archived is not None
 
     state2 = await get_state(db)
-    assert state2 is None  # active list is gone
+    # active session persists (empty) — items moved to an archived snapshot
+    assert state2 is not None
+    assert state2.items == []
 
 
 @pytest.mark.asyncio
@@ -115,10 +118,10 @@ async def test_archive_only_when_all_done(db):
     a_id, b_id = state.items[0].id, state.items[1].id
 
     _, _, archived_a = await set_item_done(db, a_id, user_id=111, done=True)
-    assert archived_a is False
+    assert archived_a is None  # B still unbought
 
     _, _, archived_b = await set_item_done(db, b_id, user_id=111, done=True)
-    assert archived_b is True
+    assert archived_b is not None  # whole list bought → archived
 
     assert await archive_count(db) == 1
     archive = await get_archive(db)
@@ -344,7 +347,8 @@ async def test_reuse_archive_creates_new_active_with_items_undone(db):
         await set_item_done(db, it.id, user_id=111, done=True)
     archived_id = (await get_archive(db))[0].id
 
-    assert await get_state(db) is None  # no active
+    empty = await get_state(db)  # active session persists, now empty
+    assert empty is not None and empty.items == []
 
     result = await reuse_archive_list(db, archived_id, user_id=222)
     assert result is not None

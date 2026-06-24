@@ -64,3 +64,15 @@ def test_group_chat_without_short_name_returns_none(webapp_url, no_short_name):
 def test_group_chat_without_bot_username_returns_none(webapp_url, short_name):
     kb = open_app_keyboard("supergroup", None)
     assert kb is None
+
+
+def test_private_deep_link_appends_hash(webapp_url):
+    kb = open_app_keyboard("private", "anybot", "tata")
+    button = kb.inline_keyboard[0][0]
+    assert button.web_app.url == "https://example.com/app#list=tata"
+
+
+def test_group_deep_link_appends_startapp(webapp_url, short_name):
+    kb = open_app_keyboard("supergroup", "shoppingbot", "maksim")
+    button = kb.inline_keyboard[0][0]
+    assert button.url == "https://t.me/shoppingbot/list?startapp=list-maksim"

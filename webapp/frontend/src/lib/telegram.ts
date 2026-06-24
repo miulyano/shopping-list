@@ -2,6 +2,7 @@ type TgEvent = 'themeChanged' | 'fullscreenFailed';
 
 export interface TelegramWebApp {
   readonly initData: string;
+  readonly initDataUnsafe?: { start_param?: string };
   readonly platform: string;
   readonly colorScheme: 'light' | 'dark';
   readonly isFullscreen?: boolean;
@@ -64,4 +65,20 @@ export function lockMiniApp(t: TelegramWebApp | null): void {
 
 export function closeApp(): void {
   if (tg) tg.close();
+}
+
+/**
+ * Resolve the list key the app should open on, from a deep link:
+ * - group direct link `?startapp=list-<key>` → `initDataUnsafe.start_param`;
+ * - private web_app button `WEBAPP_URL#list=<key>` → `location.hash`.
+ * Returns the bare key (e.g. `tata`) or null when no list was requested.
+ */
+export function getStartList(): string | null {
+  const sp = tg?.initDataUnsafe?.start_param;
+  if (sp && sp.startsWith('list-')) return sp.slice('list-'.length) || null;
+  if (typeof window !== 'undefined' && window.location.hash) {
+    const m = window.location.hash.match(/(?:^#|[#&])list=([A-Za-z0-9_-]+)/);
+    if (m && m[1]) return m[1];
+  }
+  return null;
 }

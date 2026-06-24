@@ -92,6 +92,26 @@ CATEGORY_INSTRUCTIONS = (
 )
 
 
+LIST_HINT_INSTRUCTIONS = (
+    "Верни также top-level поле `list_hint` — в какой именованный список покупок "
+    "пользователь просит добавить товары, если это явно указано в сообщении "
+    "(например «для Таты», «Максиму», «в список дача», «купи домой»). "
+    "Положи в `list_hint` само упоминание адресата/списка в той форме, как в тексте "
+    "(одно слово, можно в исходном падеже). Если адресат/список НЕ указан явно — "
+    "верни `list_hint` = null. Не путай адресата с товаром."
+)
+
+
+def _list_hint_context(list_names: Optional[list[str]]) -> str:
+    if not list_names:
+        return ""
+    names = ", ".join(f"«{n}»" for n in list_names)
+    return (
+        f"\n\nДоступные списки: {names}. "
+        "Если упомянутый адресат похож на один из них — верни его в `list_hint`."
+    )
+
+
 SYSTEM_PROMPT = (
     "Ты помогаешь собирать список покупок для дома и семьи. "
     "Извлеки из сообщения пользователя список товаров, которые он хочет купить.\n"
@@ -140,6 +160,8 @@ SYSTEM_PROMPT = (
     + CATEGORY_INSTRUCTIONS
     + "\n\n"
     + CONTEXT_UNIT_INSTRUCTIONS
+    + "\n\n"
+    + LIST_HINT_INSTRUCTIONS
 )
 
 JSON_SCHEMA = {
@@ -162,20 +184,30 @@ JSON_SCHEMA = {
                 },
                 "required": ["name", "qty", "brands", "category"],
             },
-        }
+        },
+        "list_hint": {"type": ["string", "null"]},
     },
-    "required": ["items"],
+    "required": ["items", "list_hint"],
 }
 
 
-async def parse_text(text: str) -> list[ParsedItem]:
+async def parse_text(
+    text: str, list_names: Optional[list[str]] = None
+) -> tuple[list[ParsedItem], Optional[str]]:
+    """Parse a message into (items, list_hint).
+
+    `list_names` (display names of the available named lists) is woven into the
+    prompt so the model can map an addressee to a known list. `list_hint` is the
+    raw addressee mention or None when no list was specified.
+    """
     if not text.strip():
-        return []
+        return [], None
     client = get_client()
+    system_prompt = SYSTEM_PROMPT + _list_hint_context(list_names)
     resp = await client.chat.completions.create(
         model=settings.PARSER_MODEL,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
         ],
         response_format={
@@ -189,7 +221,12 @@ async def parse_text(text: str) -> list[ParsedItem]:
         data = json.loads(raw)
     except json.JSONDecodeError:
         logger.warning("Parser returned non-JSON: %r", raw)
-        return []
+        return [], None
+    list_hint = data.get("list_hint")
+    if isinstance(list_hint, str):
+        list_hint = list_hint.strip() or None
+    else:
+        list_hint = None
     out: list[ParsedItem] = []
     for i in data.get("items", []):
         name = (i.get("name") or "").strip()
@@ -220,4 +257,4 @@ async def parse_text(text: str) -> list[ParsedItem]:
             "Parser returned %d items, deduped to %d for input %r; raw=%r",
             len(out), len(deduped), text, raw,
         )
-    return deduped
+    return deduped, list_hint

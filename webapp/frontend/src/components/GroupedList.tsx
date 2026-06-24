@@ -4,14 +4,17 @@ import { Icon } from '../icons';
 import { CATEGORIES, catKey } from '../lib/categories';
 import type { ApiItem } from '../types';
 import { ItemRow } from './ItemRow';
+import type { OpenRow } from './ItemRow';
 
 interface Props {
   items: ApiItem[];
   onToggle: (id: number) => void;
   onEdit: (item: ApiItem) => void;
   onDelete: (item: ApiItem) => void;
-  openId: number | null;
-  setOpenId: (id: number | null) => void;
+  onMove: (item: ApiItem) => void;
+  canMove: boolean;
+  openId: OpenRow;
+  setOpenId: (open: OpenRow) => void;
 }
 
 /**
@@ -22,7 +25,7 @@ interface Props {
  * move with no row-position animation (a FLIP pass here flickered on every
  * 2s poll re-render).
  */
-export function GroupedList({ items, onToggle, onEdit, onDelete, openId, setOpenId }: Props) {
+export function GroupedList({ items, onToggle, onEdit, onDelete, onMove, canMove, openId, setOpenId }: Props) {
   const groups = CATEGORIES.map((c) => {
     const list = items.filter((it) => catKey(it.category) === c.key);
     return {
@@ -66,6 +69,8 @@ export function GroupedList({ items, onToggle, onEdit, onDelete, openId, setOpen
                   onToggle={onToggle}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onMove={onMove}
+                  canMove={canMove}
                   isLast={i === g.items.length - 1}
                   openId={openId}
                   setOpenId={setOpenId}

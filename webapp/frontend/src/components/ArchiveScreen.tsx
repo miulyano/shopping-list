@@ -5,22 +5,24 @@ import { Icon } from '../icons';
 import { fmtDateTime, pluralRu } from '../lib/format';
 import { usePrimary } from '../lib/primary';
 import { fetchArchive } from '../api/client';
-import type { ApiList } from '../types';
+import type { ApiList, NamedList } from '../types';
+import { ListChip } from './ListChip';
 
 interface Props {
+  lists: NamedList[];
   onBack: () => void;
   onOpen: (id: number) => void;
 }
 
-export function ArchiveScreen({ onBack, onOpen }: Props) {
-  const [lists, setLists] = useState<ApiList[]>([]);
+export function ArchiveScreen({ lists, onBack, onOpen }: Props) {
+  const [archive, setArchive] = useState<ApiList[]>([]);
   const [loading, setLoading] = useState(true);
   const primary = usePrimary();
 
   useEffect(() => {
     setLoading(true);
     fetchArchive()
-      .then((d) => setLists(d.lists || []))
+      .then((d) => setArchive(d.lists || []))
       .catch((e) => console.error('archive load failed', e))
       .finally(() => setLoading(false));
   }, []);
@@ -45,36 +47,61 @@ export function ArchiveScreen({ onBack, onOpen }: Props) {
         </button>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 24px' }}>
-        {loading ? (
-          <div style={{ padding: 60, textAlign: 'center', color: T.text2, fontFamily: SF, fontSize: 15 }}>Загрузка...</div>
-        ) : lists.length === 0 ? (
-          <div style={{ padding: 60, textAlign: 'center', color: T.text2, fontFamily: SF, fontSize: 15 }}>Пока нет архивных списков</div>
-        ) : lists.map((list) => (
-          <button key={list.id} onClick={() => onOpen(list.id)} style={{
-            display: 'block', width: '100%', textAlign: 'left',
-            background: T.card, borderRadius: 16, padding: '14px 16px',
-            marginBottom: 10, border: 'none', cursor: 'pointer', fontFamily: SF,
+      {loading ? (
+        <div style={{ padding: 60, textAlign: 'center', color: T.text2, fontFamily: SF, fontSize: 15 }}>Загрузка...</div>
+      ) : archive.length === 0 ? (
+        <div style={{
+          flex: 1, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          padding: '0 36px 56px', textAlign: 'center',
+        }}>
+          <div style={{
+            width: 104, height: 104, borderRadius: 52, background: T.pillBg,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 22,
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
-              <div style={{ fontSize: 15, fontWeight: 600, color: T.text, letterSpacing: -0.24 }}>
+            <svg width="54" height="54" viewBox="0 0 56 56" fill="none">
+              <rect x="18.5" y="6" width="19" height="11" rx="2.5" stroke={T.text3} strokeWidth="2" strokeDasharray="3.5 3.5"/>
+              <rect x="9" y="18" width="38" height="9.5" rx="2.5" stroke={T.text3} strokeWidth="2.2"/>
+              <path d="M13 27.5V42a3 3 0 003 3h24a3 3 0 003-3V27.5" stroke={T.text3} strokeWidth="2.2" strokeLinejoin="round"/>
+              <path d="M24 34.5h8" stroke={T.text3} strokeWidth="2.2" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <div style={{ fontFamily: SF, fontSize: 18, fontWeight: 600, color: T.text, letterSpacing: -0.3, marginBottom: 7 }}>
+            Архив пуст
+          </div>
+          <div style={{ fontFamily: SF, fontSize: 14.5, color: T.text2, letterSpacing: -0.1, lineHeight: 1.45, maxWidth: 300 }}>
+            Сюда переезжают списки, в которых все товары уже куплены.
+          </div>
+        </div>
+      ) : (
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 24px' }}>
+          {archive.map((list) => (
+            <button key={list.id} onClick={() => onOpen(list.id)} style={{
+              display: 'block', width: '100%', textAlign: 'left',
+              background: T.card, borderRadius: 16, padding: '14px 16px',
+              marginBottom: 10, border: 'none', cursor: 'pointer', fontFamily: SF,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                <ListChip namedListId={list.named_list_id} lists={lists}/>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ fontSize: 13, color: T.accent, letterSpacing: -0.08, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Icon.Check s={11} c={T.accent}/>
+                    {list.items.length} {pluralRu(list.items.length, ['товар', 'товара', 'товаров'])}
+                  </div>
+                  <Icon.Chevron s={12} c={T.text3}/>
+                </div>
+              </div>
+              <div style={{ fontSize: 12.5, color: T.text3, letterSpacing: -0.04, marginBottom: 5, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtDateTime(new Date(list.created_at * 1000))}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontSize: 13, color: T.accent, letterSpacing: -0.08, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Icon.Check s={11} c={T.accent}/>
-                  {list.items.length} {pluralRu(list.items.length, ['товар', 'товара', 'товаров'])}
-                </div>
-                <Icon.Chevron s={12} c={T.text3}/>
-              </div>
-            </div>
-            <div style={{
-              fontSize: 14, color: T.text2, letterSpacing: -0.08, lineHeight: 1.45,
-              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-            }}>{list.items.map((i) => i.name).join(' · ')}</div>
-          </button>
-        ))}
-      </div>
+              <div style={{
+                fontSize: 14, color: T.text2, letterSpacing: -0.08, lineHeight: 1.45,
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              }}>{list.items.map((i) => i.name).join(' · ')}</div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
