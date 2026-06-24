@@ -34,11 +34,26 @@ def normalize_qty(value: Any) -> Optional[str]:
     return stripped
 
 
+def normalize_category(value: Any) -> str:
+    """Map an AI category value to a known key, falling back to DEFAULT_CATEGORY."""
+    if isinstance(value, str) and value.strip().casefold() in CATEGORIES:
+        return value.strip().casefold()
+    return DEFAULT_CATEGORY
+
+
+# Fixed category taxonomy. Each parsed item is assigned exactly one key; the
+# Mini App groups the list by these. Keep in sync with the frontend CATEGORIES
+# (webapp/frontend/src/lib/categories.ts).
+CATEGORIES = ("food", "home", "care")
+DEFAULT_CATEGORY = "food"
+
+
 @dataclass
 class ParsedItem:
     name: str
     qty: Optional[str] = None
     brands: list[str] = field(default_factory=list)
+    category: str = DEFAULT_CATEGORY
 
 
 CONTEXT_UNIT_INSTRUCTIONS = (
@@ -59,6 +74,21 @@ CONTEXT_UNIT_INSTRUCTIONS = (
     "Для бытовой техники и электроники, где штучность очевидна и число не указано, "
     "оставь qty = null. "
     "Если контекста для выбора единицы недостаточно — оставь число как есть."
+)
+
+
+CATEGORY_INSTRUCTIONS = (
+    "Для каждого товара верни поле `category` — одну из трёх категорий:\n"
+    "  - `food` — продукты и напитки (еда, вода, соки, кофе, чай, алкоголь, "
+    "корм для животных, детское питание);\n"
+    "  - `home` — бытовые и хозяйственные товары: бытовая химия и расходники для дома "
+    "(средство для посуды, стиральный порошок, мешки для мусора, фольга, салфетки, "
+    "губки), посуда и кухонная утварь, лампочки, батарейки, инструменты, строительные "
+    "и хозтовары, текстиль, товары для дома;\n"
+    "  - `care` — гигиена и косметика (зубная паста, шампунь, мыло, гель для душа, "
+    "дезодорант, бритвы, прокладки, ватные диски, крем, декоративная косметика).\n"
+    "Если товар не подходит явно ни к home, ни к care — ставь `food`. "
+    "Поле `category` обязательно для каждой позиции."
 )
 
 
@@ -107,6 +137,8 @@ SYSTEM_PROMPT = (
     "пользователь написал их с заглавной. Каждая строка в `brands` должна реально "
     "встречаться в поле `name` той же позиции — не придумывай брендов, которых нет в тексте.\n"
     "\n"
+    + CATEGORY_INSTRUCTIONS
+    + "\n\n"
     + CONTEXT_UNIT_INSTRUCTIONS
 )
 
@@ -126,8 +158,9 @@ JSON_SCHEMA = {
                         "type": "array",
                         "items": {"type": "string"},
                     },
+                    "category": {"type": "string", "enum": list(CATEGORIES)},
                 },
-                "required": ["name", "qty", "brands"],
+                "required": ["name", "qty", "brands", "category"],
             },
         }
     },
@@ -167,7 +200,12 @@ async def parse_text(text: str) -> list[ParsedItem]:
         formatted = format_item_name(name, brands)
         if not formatted:
             continue
-        out.append(ParsedItem(name=formatted, qty=normalize_qty(i.get("qty")), brands=brands))
+        out.append(ParsedItem(
+            name=formatted,
+            qty=normalize_qty(i.get("qty")),
+            brands=brands,
+            category=normalize_category(i.get("category")),
+        ))
 
     seen: set[tuple[str, Optional[str]]] = set()
     deduped: list[ParsedItem] = []

@@ -59,9 +59,9 @@ describe('App view states', () => {
   it('renders list view with items and progress', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: '1 л', done: false, position: 0 },
-        { id: 11, name: 'хлеб', qty: null, done: true, position: 1 },
-        { id: 12, name: 'яйца', qty: '10 шт', done: false, position: 2 },
+        { id: 10, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food' },
+        { id: 11, name: 'хлеб', qty: null, done: true, position: 1, category: 'food' },
+        { id: 12, name: 'яйца', qty: '10 шт', done: false, position: 2, category: 'food' },
       ]),
     });
     render(<App />);
@@ -74,10 +74,39 @@ describe('App view states', () => {
     expect(screen.getByText('Убрать купленное')).toBeInTheDocument();
   });
 
+  it('groups items by category and skips empty groups', async () => {
+    mockFetch({
+      '/api/state': () => listState([
+        { id: 10, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food' },
+        { id: 11, name: 'порошок', qty: null, done: false, position: 1, category: 'home' },
+        { id: 12, name: 'губки', qty: '5 шт', done: false, position: 2, category: 'home' },
+      ]),
+    });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('молоко')).toBeInTheDocument());
+    // present category headers
+    expect(screen.getByText('Продукты')).toBeInTheDocument();
+    expect(screen.getByText('Бытовые товары')).toBeInTheDocument();
+    // empty group (care) is skipped
+    expect(screen.queryByText('Косметика и гигиена')).not.toBeInTheDocument();
+    expect(screen.getByText('губки')).toBeInTheDocument();
+  });
+
+  it('treats null/legacy category as Продукты', async () => {
+    mockFetch({
+      '/api/state': () => listState([
+        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: null },
+      ]),
+    });
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('молоко')).toBeInTheDocument());
+    expect(screen.getByText('Продукты')).toBeInTheDocument();
+  });
+
   it('does not show "Убрать купленное" when nothing is done', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: null, done: false, position: 0 },
+        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food' },
       ]),
     });
     render(<App />);
@@ -88,8 +117,8 @@ describe('App view states', () => {
   it('shows "Все товары куплены" overlay when allDone', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: null, done: true, position: 0 },
-        { id: 11, name: 'хлеб', qty: null, done: true, position: 1 },
+        { id: 10, name: 'молоко', qty: null, done: true, position: 0, category: 'food' },
+        { id: 11, name: 'хлеб', qty: null, done: true, position: 1, category: 'food' },
       ]),
     });
     render(<App />);
@@ -99,7 +128,7 @@ describe('App view states', () => {
   it('navigates to ArchiveScreen via header pill', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: null, done: false, position: 0 },
+        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food' },
       ]),
       '/api/archive': () => ({ lists: [] }),
     });
@@ -116,7 +145,7 @@ describe('App optimistic toggle', () => {
   it('sends POST /api/items/:id/state with done:true on row click', async () => {
     const f = mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: null, done: false, position: 0 },
+        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food' },
       ]),
       '/api/items/10/state': () => ({ list_id: 1, done: true, archived: false }),
     });
@@ -147,7 +176,7 @@ describe('App optimistic toggle', () => {
           ok: true,
           status: 200,
           json: async () => listState([
-            { id: 10, name: 'молоко', qty: null, done: false, position: 0 },
+            { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food' },
           ]),
         } as Response);
       }

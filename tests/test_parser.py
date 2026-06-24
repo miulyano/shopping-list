@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from bot.services.parser import normalize_qty, parse_text
+from bot.services.parser import normalize_category, normalize_qty, parse_text
 
 
 @pytest.mark.parametrize(
@@ -78,6 +78,53 @@ async def test_parse_text_returns_items():
     assert [i.name for i in result] == ["молоко", "хлеб"]
     assert result[0].qty == "1 л"
     assert result[1].qty is None
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("food", "food"),
+        ("home", "home"),
+        ("care", "care"),
+        (" HOME ", "home"),
+        ("Care", "care"),
+        ("groceries", "food"),  # unknown → default
+        (None, "food"),
+        ("", "food"),
+        (123, "food"),
+    ],
+)
+def test_normalize_category(raw, expected):
+    assert normalize_category(raw) == expected
+
+
+@pytest.mark.asyncio
+async def test_parse_text_assigns_category():
+    response = _mk_response([
+        {"name": "Молоко", "qty": "1 л", "brands": [], "category": "food"},
+        {"name": "Стиральный порошок", "qty": None, "brands": [], "category": "home"},
+        {"name": "Зубная паста", "qty": None, "brands": [], "category": "care"},
+    ])
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
+    )
+    with patch("bot.services.parser.get_client", return_value=fake_client):
+        result = await parse_text("молоко, порошок, зубная паста")
+    assert [i.category for i in result] == ["food", "home", "care"]
+
+
+@pytest.mark.asyncio
+async def test_parse_text_invalid_category_falls_back_to_food():
+    response = _mk_response([
+        {"name": "Молоко", "qty": None, "brands": [], "category": "groceries"},
+        {"name": "Хлеб", "qty": None, "brands": []},  # category missing entirely
+    ])
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
+    )
+    with patch("bot.services.parser.get_client", return_value=fake_client):
+        result = await parse_text("молоко, хлеб")
+    assert [i.category for i in result] == ["food", "food"]
 
 
 @pytest.mark.asyncio

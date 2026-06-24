@@ -20,7 +20,7 @@ function sortItems(items: ApiItem[]): ApiItem[] {
     return a.position - b.position;
   });
 }
-import { ItemRow } from './components/ItemRow';
+import { GroupedList } from './components/GroupedList';
 import { EditSheet } from './components/EditSheet';
 import { ConfirmSheet } from './components/ConfirmSheet';
 import { Progress } from './components/Progress';
@@ -323,21 +323,16 @@ export function App() {
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 16px' }}>
         <div style={{
-          background: T.card, borderRadius: 18, overflow: 'hidden',
           opacity: (allDone || archivedFlash) ? 0.6 : 1, transition: 'opacity 0.3s',
         }}>
-          {items.map((item, i) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              onToggle={onToggle}
-              onEdit={(it) => setEditing(it)}
-              onDelete={(it) => setConfirmDeleteItem(it)}
-              isLast={i === items.length - 1}
-              openId={openId}
-              setOpenId={setOpenId}
-            />
-          ))}
+          <GroupedList
+            items={items}
+            onToggle={onToggle}
+            onEdit={(it) => setEditing(it)}
+            onDelete={(it) => setConfirmDeleteItem(it)}
+            openId={openId}
+            setOpenId={setOpenId}
+          />
         </div>
         {(allDone || archivedFlash) && (
           <div style={{

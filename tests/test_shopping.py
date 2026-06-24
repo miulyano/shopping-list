@@ -43,6 +43,32 @@ async def test_add_items_inserts_with_positions(db):
 
 
 @pytest.mark.asyncio
+async def test_add_items_persists_category(db):
+    await add_items(
+        db,
+        [
+            ParsedItem("Молоко", "1 л", category="food"),
+            ParsedItem("Стиральный порошок", None, category="home"),
+            ParsedItem("Зубная паста", None, category="care"),
+        ],
+        user_id=111,
+    )
+    state = await get_state(db)
+    assert [(i.name, i.category) for i in state.items] == [
+        ("молоко", "food"),
+        ("стиральный порошок", "home"),
+        ("зубная паста", "care"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_add_items_default_category_is_food(db):
+    await add_items(db, [ParsedItem("Хлеб", None)], user_id=111)
+    state = await get_state(db)
+    assert state.items[0].category == "food"
+
+
+@pytest.mark.asyncio
 async def test_add_items_lowercases_and_preserves_brands(db):
     _, names = await add_items(
         db,
@@ -310,6 +336,23 @@ async def test_reuse_archive_creates_new_active_with_items_undone(db):
     assert all(not i.done for i in state2.items)
     assert state2.items[0].qty == "1 л"
     assert state2.items[0].added_by == 222
+
+
+@pytest.mark.asyncio
+async def test_reuse_archive_preserves_category(db):
+    await add_items(
+        db,
+        [ParsedItem("Молоко", "1 л", category="food"), ParsedItem("Порошок", None, category="home")],
+        user_id=111,
+    )
+    state = await get_state(db)
+    for it in state.items:
+        await set_item_done(db, it.id, user_id=111, done=True)
+    archived_id = (await get_archive(db))[0].id
+
+    await reuse_archive_list(db, archived_id, user_id=222)
+    state2 = await get_state(db)
+    assert {(i.name, i.category) for i in state2.items} == {("молоко", "food"), ("порошок", "home")}
 
 
 @pytest.mark.asyncio

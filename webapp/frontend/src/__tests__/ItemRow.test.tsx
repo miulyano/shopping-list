@@ -4,7 +4,7 @@ import { ItemRow } from '../components/ItemRow';
 import type { ApiItem } from '../types';
 
 const baseItem: ApiItem = {
-  id: 1, name: 'молоко', qty: '1 л', done: false, position: 0,
+  id: 1, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food',
 };
 
 function renderRow(overrides: Partial<Parameters<typeof ItemRow>[0]> = {}) {

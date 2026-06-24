@@ -14,6 +14,7 @@ class Item:
     checked_by: Optional[int]
     checked_at: Optional[int]
     position: int
+    category: Optional[str] = None
 
 
 @dataclass

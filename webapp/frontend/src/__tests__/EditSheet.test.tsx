@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { EditSheet } from '../components/EditSheet';
 import type { ApiItem } from '../types';
 
-const item: ApiItem = { id: 1, name: 'молоко', qty: '1 л', done: false, position: 0 };
+const item: ApiItem = { id: 1, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food' };
 
 describe('EditSheet', () => {
   it('renders prefilled name and qty inputs', () => {
