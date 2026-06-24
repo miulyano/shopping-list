@@ -16,7 +16,9 @@ import type { ApiIngest, ApiItem, ApiList } from './types';
 function sortItems(items: ApiItem[]): ApiItem[] {
   return [...items].sort((a, b) => {
     if (a.done !== b.done) return (a.done ? 1 : 0) - (b.done ? 1 : 0);
-    if (a.done) return (b.checked_at || 0) - (a.checked_at || 0);
+    // Checked items sink to the bottom; the most recently checked goes last
+    // ("to the end"), so ticking an item appends it after earlier-checked ones.
+    if (a.done) return (a.checked_at || 0) - (b.checked_at || 0);
     return a.position - b.position;
   });
 }
