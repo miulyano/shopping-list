@@ -1,4 +1,3 @@
-import { useLayoutEffect, useRef } from 'react';
 import { T } from '../theme';
 import { SF } from '../lib/constants';
 import { Icon } from '../icons';
@@ -19,13 +18,11 @@ interface Props {
  * Renders the active list grouped by category (fixed CATEGORIES order, empty
  * groups skipped). `items` is expected pre-sorted by the parent (not-done
  * first, done sinking to the bottom by checked_at) — filtering per group
- * preserves that relative order. A FLIP pass animates rows whose vertical
- * position changed between renders (sink / rise).
+ * preserves that order. Rows are keyed by id, so a reorder is an instant DOM
+ * move with no row-position animation (a FLIP pass here flickered on every
+ * 2s poll re-render).
  */
 export function GroupedList({ items, onToggle, onEdit, onDelete, openId, setOpenId }: Props) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const prevPos = useRef<Map<string, number>>(new Map());
-
   const groups = CATEGORIES.map((c) => {
     const list = items.filter((it) => catKey(it.category) === c.key);
     return {
@@ -37,33 +34,8 @@ export function GroupedList({ items, onToggle, onEdit, onDelete, openId, setOpen
     };
   }).filter((g) => g.total > 0);
 
-  useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    // Measure each row's offset RELATIVE to the list root, not the viewport.
-    // A viewport-relative top changes on every scroll (and on any layout shift
-    // above the list, e.g. the status banner), which made the FLIP fire on each
-    // 2s poll re-render — a constant flicker. Relative offset is scroll- and
-    // layout-invariant, so the animation only runs on a real reorder (toggle).
-    const rootTop = root.getBoundingClientRect().top;
-    const nodes = root.querySelectorAll<HTMLElement>('[data-flip-id]');
-    const next = new Map<string, number>();
-    nodes.forEach((n) => next.set(n.getAttribute('data-flip-id')!, n.getBoundingClientRect().top - rootTop));
-    next.forEach((top, id) => {
-      const prev = prevPos.current.get(id);
-      if (prev != null && Math.abs(prev - top) > 0.5) {
-        const node = root.querySelector<HTMLElement>(`[data-flip-id="${id}"]`);
-        node?.animate(
-          [{ transform: `translateY(${prev - top}px)` }, { transform: 'translateY(0)' }],
-          { duration: 360, easing: 'cubic-bezier(0.32,0.72,0,1)' },
-        );
-      }
-    });
-    prevPos.current = next;
-  });
-
   return (
-    <div ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
       {groups.map((g) => {
         const complete = g.done === g.total;
         return (
@@ -88,17 +60,16 @@ export function GroupedList({ items, onToggle, onEdit, onDelete, openId, setOpen
             </div>
             <div style={{ background: T.card, borderRadius: 18, overflow: 'hidden' }}>
               {g.items.map((item, i) => (
-                <div key={item.id} data-flip-id={item.id}>
-                  <ItemRow
-                    item={item}
-                    onToggle={onToggle}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                    isLast={i === g.items.length - 1}
-                    openId={openId}
-                    setOpenId={setOpenId}
-                  />
-                </div>
+                <ItemRow
+                  key={item.id}
+                  item={item}
+                  onToggle={onToggle}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  isLast={i === g.items.length - 1}
+                  openId={openId}
+                  setOpenId={setOpenId}
+                />
               ))}
             </div>
           </div>
