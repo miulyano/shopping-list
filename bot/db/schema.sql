@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS items (
     added_at INTEGER NOT NULL,
     checked_by INTEGER,
     checked_at INTEGER,
-    position INTEGER NOT NULL
+    position INTEGER NOT NULL,
+    category TEXT
 );
 
 CREATE INDEX IF NOT EXISTS items_list_idx ON items(list_id, position);

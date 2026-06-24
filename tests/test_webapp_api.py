@@ -83,6 +83,14 @@ def test_new_list_conflict_when_non_empty(client, headers):
     assert r.status_code == 409
 
 
+def test_state_items_include_category(client, headers):
+    _seed_items([("Молоко", None)])
+    state = client.get("/api/state", headers=headers).json()
+    item = state["active_list"]["items"][0]
+    assert "category" in item
+    assert item["category"] == "food"
+
+
 def test_set_state_archives_when_all_done(client, headers):
     ids = _seed_items([("Молоко", None), ("Хлеб", None)])
 

@@ -4,6 +4,8 @@ export interface ApiItem {
   qty: string | null;
   done: boolean;
   position: number;
+  /** Category key (food | home | care); null on legacy rows before backfill. */
+  category: string | null;
   /** Optimistic-only field set in toggle handler; backend never returns it. */
   checked_at?: number | null;
 }

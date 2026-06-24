@@ -9,9 +9,11 @@ from bot.config import settings
 from bot.services.name_format import format_item_name
 from bot.services.openai_client import get_client
 from bot.services.parser import (
+    CATEGORY_INSTRUCTIONS,
     CONTEXT_UNIT_INSTRUCTIONS,
     JSON_SCHEMA,
     ParsedItem,
+    normalize_category,
     normalize_qty,
 )
 
@@ -34,6 +36,8 @@ SYSTEM_PROMPT = (
     "Не считай брендом нарицательные слова. Каждая строка в `brands` должна реально "
     "встречаться в поле `name` той же позиции.\n"
     "\n"
+    + CATEGORY_INSTRUCTIONS
+    + "\n\n"
     + CONTEXT_UNIT_INSTRUCTIONS
 )
 
@@ -80,5 +84,10 @@ async def parse_image(image_path: str) -> list[ParsedItem]:
         formatted = format_item_name(name, brands)
         if not formatted:
             continue
-        items.append(ParsedItem(name=formatted, qty=normalize_qty(i.get("qty")), brands=brands))
+        items.append(ParsedItem(
+            name=formatted,
+            qty=normalize_qty(i.get("qty")),
+            brands=brands,
+            category=normalize_category(i.get("category")),
+        ))
     return items

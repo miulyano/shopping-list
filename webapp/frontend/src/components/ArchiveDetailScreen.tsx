@@ -5,6 +5,7 @@ import { Icon } from '../icons';
 import { fmtDateTime, fmtDateTimeCaps } from '../lib/format';
 import { usePrimary } from '../lib/primary';
 import { deleteArchive, fetchArchiveOne, reuseArchive } from '../api/client';
+import { CATEGORIES, catKey } from '../lib/categories';
 import type { ApiList } from '../types';
 import { ConfirmSheet } from './ConfirmSheet';
 
@@ -42,6 +43,11 @@ export function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, o
   const createdAt = new Date(list.created_at * 1000);
   const dateForConfirm = fmtDateTime(createdAt);
   const reuseLabel = hasActive ? 'Добавить в текущий список' : 'Создать новый список';
+
+  // group archived items by category (all bought) — skip empty groups
+  const groups = CATEGORIES
+    .map((c) => ({ key: c.key, label: c.label, items: list.items.filter((it) => catKey(it.category) === c.key) }))
+    .filter((g) => g.items.length > 0);
 
   const doReuse = async () => {
     if (busy) return;
@@ -111,31 +117,43 @@ export function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, o
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 16px' }}>
-        <div style={{ background: T.card, borderRadius: 18, overflow: 'hidden' }}>
-          {list.items.map((item, i) => (
-            <div key={item.id} style={{
-              display: 'flex', alignItems: 'center', minHeight: 52,
-              padding: '0 18px', position: 'relative',
-            }}>
-              <div style={{
-                width: 22, height: 22, borderRadius: 11, marginRight: 14, flexShrink: 0,
-                background: T.accent,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Icon.Check s={12}/>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+          {groups.map((g) => (
+            <div key={g.key}>
+              <div style={{ padding: '0 20px 7px' }}>
+                <span style={{
+                  fontFamily: SF, fontSize: 12.5, fontWeight: 600, letterSpacing: 0.3,
+                  textTransform: 'uppercase', color: T.text2,
+                }}>{g.label}</span>
               </div>
-              <div style={{
-                flex: 1, fontFamily: SF, fontSize: 16, letterSpacing: -0.32,
-                color: T.text2,
-              }}>
-                {item.name}
-                {item.qty && (
-                  <span style={{ marginLeft: 8, fontSize: 14, color: 'currentColor', opacity: 0.7 }}>{item.qty}</span>
-                )}
+              <div style={{ background: T.card, borderRadius: 18, overflow: 'hidden' }}>
+                {g.items.map((item, i) => (
+                  <div key={item.id} style={{
+                    display: 'flex', alignItems: 'center', minHeight: 52,
+                    padding: '0 18px', position: 'relative',
+                  }}>
+                    <div style={{
+                      width: 22, height: 22, borderRadius: 11, marginRight: 14, flexShrink: 0,
+                      background: T.accent,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Icon.Check s={12}/>
+                    </div>
+                    <div style={{
+                      flex: 1, fontFamily: SF, fontSize: 16, letterSpacing: -0.32,
+                      color: T.text2,
+                    }}>
+                      {item.name}
+                      {item.qty && (
+                        <span style={{ marginLeft: 8, fontSize: 14, color: 'currentColor', opacity: 0.7 }}>{item.qty}</span>
+                      )}
+                    </div>
+                    {i < g.items.length - 1 && (
+                      <div style={{ position: 'absolute', bottom: 0, left: 54, right: 0, height: 0.5, background: T.sep }}/>
+                    )}
+                  </div>
+                ))}
               </div>
-              {i < list.items.length - 1 && (
-                <div style={{ position: 'absolute', bottom: 0, left: 54, right: 0, height: 0.5, background: T.sep }}/>
-              )}
             </div>
           ))}
         </div>

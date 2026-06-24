@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.12.1-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-0.13.0-blue" alt="version">
   <img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey" alt="license">
 </p>
 
-Telegram-бот + Mini App для общего списка покупок. Принимает текст, голосовые сообщения и фото — раскладывает в плоский список через OpenAI (Whisper + gpt-4o). Список один и общий для всех whitelisted-пользователей; когда все товары отмечены купленными — уходит в архив, и можно создать новый.
+Telegram-бот + Mini App для общего списка покупок. Принимает текст, голосовые сообщения и фото — раскладывает в список с группировкой по категориям через OpenAI (Whisper + gpt-4o). Список один и общий для всех whitelisted-пользователей; когда все товары отмечены купленными — уходит в архив, и можно создать новый.
 
 ## Что умеет
 
@@ -18,6 +18,7 @@ Telegram-бот + Mini App для общего списка покупок. Пр
 - 🎙 **Голосовое** — `gpt-4o-mini-transcribe` (более точный, чем `whisper-1`) транскрибирует, парсер выделяет товары. Биас-словарь `WHISPER_PROMPT` подсказывает редкие слова (семена чиа, киноа, фольга, изолента и т.п.), чтобы они не путались с похожими по звучанию.
 - 📷 **Фото** — gpt-4o (vision) распознаёт чек, продукты в холодильнике/на полке, рукописные записки.
 - 📲 **Mini App** — один активный список, прогресс-бар, чекбоксы, primary-CTA «Добавить товары» в футере. Свайп влево по строке открывает «Изменить» / «Удалить», bottom-sheet правит название и количество. Отмеченные товары автоматически уезжают вниз списка, неотмеченные остаются сверху. Последние отмеченные встают в начало блока отмеченных, чтобы их легко было откатить при ошибочной отметке. Когда все товары отмечены — список автоматически уезжает в архив. На мобилках открывается в fullscreen и не сворачивается случайным вертикальным свайпом. Закрытие — через нативные контролы Telegram.
+- 🗂 **Категории** — каждый товар при разборе получает одну из трёх категорий: **Продукты** (`food`), **Бытовые товары** (`home`), **Косметика и гигиена** (`care`). Категорию проставляет LLM на этапе парсинга. В Mini App список и архивные карточки сгруппированы по категориям с заголовками (`done/total` у активного списка); пустые группы скрыты, внутри группы купленные уезжают вниз. Товары без категории (старые записи) показываются в «Продукты». Бэкфилл существующих — `scripts/backfill_categories.py`.
 - 🧹 **«Убрать купленное»** — кнопка в прогресс-баре активного списка. Появляется, когда часть товаров куплена, а часть ещё нет. Купленные переезжают в новый архивный список, активный остаётся только с непокупленными. История покупок сохраняется в архиве.
 - 🗂 **Архив** — список архивных карточек с датой+временем создания. Внутри карточки: «Добавить в текущий список» / «Создать новый список» (всё снимается с галочки) или «Удалить список» с подтверждением.
 - ⏳ **Status banner** — пока бот разбирает текст / голосовое / фото из чата, в Mini App над футером висит индикатор стадии («Распознаю…», «Извлекаю товары…», «Добавлено N товаров»).
@@ -73,8 +74,8 @@ shopping-list/
 │   │   ├── ingest_state.py     # прогресс ингеста для Mini App status banner
 │   │   └── temp_cleanup.py     # периодическая чистка TEMP_DIR
 │   └── db/
-│       ├── schema.sql          # lists, items, ingest_events, app_settings
-│       ├── store.py            # connect, init_db
+│       ├── schema.sql          # lists, items (+ category), ingest_events, app_settings
+│       ├── store.py            # connect, init_db (+ guarded ALTER миграции)
 │       ├── settings_kv.py      # key/value стор (pinned_thread_id и т.п.)
 │       └── models.py
 ├── webapp/
@@ -93,9 +94,9 @@ shopping-list/
 │   │       ├── theme.ts        # LIGHT/DARK токены + useTheme (useSyncExternalStore)
 │   │       ├── types.ts        # типы API
 │   │       ├── icons.tsx       # SVG-иконки (Plus, Mic, Camera, Check, Cart, Archive, ...)
-│   │       ├── lib/            # telegram.ts, constants.ts, format.ts, primary.ts
+│   │       ├── lib/            # telegram.ts, constants.ts, format.ts, primary.ts, categories.ts
 │   │       ├── api/client.ts   # fetch-обёртка с X-Telegram-Init-Data
-│   │       ├── components/     # ItemRow, EditSheet, ConfirmSheet, Progress, StatusBanner, ChatHint, StarterScreen, EmptyState, ArchiveScreen, ArchiveDetailScreen
+│   │       ├── components/     # GroupedList, ItemRow, EditSheet, ConfirmSheet, Progress, StatusBanner, ChatHint, StarterScreen, EmptyState, ArchiveScreen, ArchiveDetailScreen
 │   │       └── styles/globals.css  # анимации, safe-area, скрытие скроллбара
 │   └── static/                 # gitignored: артефакт `vite build` (index.html + assets/*)
 ├── tests/
@@ -109,7 +110,8 @@ shopping-list/
 │   ├── test_webapp_auth.py
 │   └── test_webapp_api.py
 ├── scripts/
-│   └── normalize_existing_items.py   # одноразовая миграция имён под новый формат
+│   ├── normalize_existing_items.py   # одноразовая миграция имён под новый формат
+│   └── backfill_categories.py        # одноразовый бэкфилл category существующим товарам (LLM)
 ├── assets/
 │   └── cover.png               # обложка README
 ├── data/                       # gitignored: shopping.db

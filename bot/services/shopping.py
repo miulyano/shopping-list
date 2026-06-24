@@ -47,9 +47,9 @@ async def add_items(
         if not name:
             continue
         await db.execute(
-            "INSERT INTO items (list_id, name, qty, done, added_by, added_at, position) "
-            "VALUES (?, ?, ?, 0, ?, ?, ?)",
-            (list_id, name, it.qty, user_id, now, pos),
+            "INSERT INTO items (list_id, name, qty, done, added_by, added_at, position, category) "
+            "VALUES (?, ?, ?, 0, ?, ?, ?, ?)",
+            (list_id, name, it.qty, user_id, now, pos, it.category),
         )
         inserted.append(name)
         pos += 1
@@ -122,6 +122,7 @@ def _row_to_item(row: aiosqlite.Row) -> Item:
         checked_by=row["checked_by"],
         checked_at=row["checked_at"],
         position=row["position"],
+        category=row["category"],
     )
 
 
@@ -129,7 +130,7 @@ async def _load_list_with_items(
     db: aiosqlite.Connection, list_row: aiosqlite.Row
 ) -> ShoppingList:
     items_cur = await db.execute(
-        "SELECT id, list_id, name, qty, done, added_by, added_at, checked_by, checked_at, position "
+        "SELECT id, list_id, name, qty, done, added_by, added_at, checked_by, checked_at, position, category "
         "FROM items WHERE list_id=? ORDER BY done ASC, checked_at DESC, position ASC",
         (list_row["id"],),
     )
@@ -293,9 +294,9 @@ async def reuse_archive_list(
     added = 0
     for it in src.items:
         await db.execute(
-            "INSERT INTO items (list_id, name, qty, done, added_by, added_at, position) "
-            "VALUES (?, ?, ?, 0, ?, ?, ?)",
-            (list_id, it.name, it.qty, user_id, now, pos),
+            "INSERT INTO items (list_id, name, qty, done, added_by, added_at, position, category) "
+            "VALUES (?, ?, ?, 0, ?, ?, ?, ?)",
+            (list_id, it.name, it.qty, user_id, now, pos, it.category),
         )
         added += 1
         pos += 1

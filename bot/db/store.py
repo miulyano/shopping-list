@@ -19,7 +19,19 @@ async def init_db(db_path: str | None = None) -> None:
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     async with aiosqlite.connect(path) as db:
         await db.executescript(schema)
+        await _migrate(db)
         await db.commit()
+
+
+async def _migrate(db: aiosqlite.Connection) -> None:
+    """Idempotent column migrations for DBs created before a column existed.
+
+    `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a new column
+    must be added with a guarded ALTER. Safe to run on every startup.
+    """
+    cols = {row[1] for row in await (await db.execute("PRAGMA table_info(items)")).fetchall()}
+    if "category" not in cols:
+        await db.execute("ALTER TABLE items ADD COLUMN category TEXT")
 
 
 @asynccontextmanager

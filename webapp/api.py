@@ -51,6 +51,7 @@ def _list_to_dict(lst) -> dict:
                 "qty": i.qty,
                 "done": i.done,
                 "position": i.position,
+                "category": i.category,
             }
             for i in lst.items
         ],
