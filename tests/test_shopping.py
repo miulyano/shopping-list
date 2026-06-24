@@ -196,7 +196,7 @@ async def test_checked_items_sink_to_bottom(db):
 
 
 @pytest.mark.asyncio
-async def test_recently_checked_goes_to_top_of_checked_block(db, monkeypatch):
+async def test_recently_checked_goes_to_end_of_checked_block(db, monkeypatch):
     await add_items(
         db,
         [ParsedItem("A"), ParsedItem("B"), ParsedItem("C")],
@@ -212,8 +212,10 @@ async def test_recently_checked_goes_to_top_of_checked_block(db, monkeypatch):
     monkeypatch.setattr(svc.time, "time", lambda: 2000.0)
     await set_item_done(db, b_id, user_id=111, done=True)
 
+    # Checked items sink to the bottom; the most recently checked goes last,
+    # so the order is: not-done (c), then oldest-checked (a), newest-checked (b).
     state2 = await get_state(db)
-    assert [i.name for i in state2.items] == ["c", "b", "a"]
+    assert [i.name for i in state2.items] == ["c", "a", "b"]
     assert [i.done for i in state2.items] == [False, True, True]
 
 
