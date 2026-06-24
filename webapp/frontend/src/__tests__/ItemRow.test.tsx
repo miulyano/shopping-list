@@ -4,7 +4,7 @@ import { ItemRow } from '../components/ItemRow';
 import type { ApiItem } from '../types';
 
 const baseItem: ApiItem = {
-  id: 1, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food',
+  id: 1, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food', named_list_id: 1,
 };
 
 function renderRow(overrides: Partial<Parameters<typeof ItemRow>[0]> = {}) {
@@ -13,6 +13,8 @@ function renderRow(overrides: Partial<Parameters<typeof ItemRow>[0]> = {}) {
     onToggle: vi.fn(),
     onEdit: vi.fn(),
     onDelete: vi.fn(),
+    onMove: vi.fn(),
+    canMove: false,
     isLast: true,
     openId: null,
     setOpenId: vi.fn(),

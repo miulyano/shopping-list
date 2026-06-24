@@ -51,14 +51,21 @@ async def _mentions(bot: Bot, chat_id: int, user_ids: list[int]) -> list[str]:
     return tags
 
 
-def _items_block(adder_name: str, names: list[str]) -> str:
-    """Header (adder + pluralized count) followed by a bullet list of items."""
+def _items_block(
+    adder_name: str,
+    names: list[str],
+    list_name: str | None = None,
+    unresolved: bool = False,
+) -> str:
+    """Header (adder + pluralized count + target list) followed by a bullet list."""
     word = plural_ru(len(names), ("товар", "товара", "товаров"))
-    header = (
-        f"<b>{html.escape(adder_name)}</b> добавил(а) {len(names)} {word} в список:"
-    )
+    where = f" в список «{html.escape(list_name)}»" if list_name else " в список"
+    header = f"<b>{html.escape(adder_name)}</b> добавил(а) {len(names)} {word}{where}:"
     lines = "\n".join(f"• {html.escape(n)}" for n in names)
-    return f"{header}\n{lines}"
+    block = f"{header}\n{lines}"
+    if unresolved:
+        block += "\n\n⚠️ Не распознал, в какой список — положил в «Общее»."
+    return block
 
 
 async def notify_items_added(
@@ -66,6 +73,9 @@ async def notify_items_added(
     adder: User,
     chat_type: str,
     added_names: list[str],
+    list_name: str | None = None,
+    list_key: str | None = None,
+    unresolved: bool = False,
 ) -> None:
     """Fan-out notifications after a successful add.
 
@@ -73,6 +83,9 @@ async def notify_items_added(
     PRIVATE add -> (a) one message to TARGET_CHAT_ID (if set) @mentioning every
                    member except the adder, with a url open-list button, AND
                    (b) DM every member except the adder (web_app button).
+
+    `list_name`/`list_key` tag the message with the target named list and make
+    every open-list button deep-link straight into it.
 
     No-op when there are no added items or no recipients besides the adder.
     Each send is best-effort: a blocked DM or a missing group does not abort
@@ -85,11 +98,11 @@ async def notify_items_added(
         return
 
     adder_name = _display_name_from_user(adder)
-    body = _items_block(adder_name, added_names)
+    body = _items_block(adder_name, added_names, list_name, unresolved)
 
     me = await bot.me()
-    dm_kb = open_app_keyboard("private", me.username)
-    group_kb = open_app_keyboard(_GROUP_CHAT_TYPE, me.username)
+    dm_kb = open_app_keyboard("private", me.username, list_key)
+    group_kb = open_app_keyboard(_GROUP_CHAT_TYPE, me.username, list_key)
 
     # Group post — only when the add came from a private chat and a group is set.
     if chat_type == "private" and settings.TARGET_CHAT_ID is not None:

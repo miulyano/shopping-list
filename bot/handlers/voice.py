@@ -13,7 +13,7 @@ from bot.services import ingest_state
 from bot.services.media import to_mp3_16k_mono
 from bot.services.notify import notify_items_added
 from bot.services.parser import parse_text
-from bot.services.shopping import add_items
+from bot.services.shopping import add_items, get_named_lists, resolve_target_list
 from bot.services.transcriber import transcribe_audio
 
 
@@ -48,10 +48,16 @@ async def on_voice(message: Message) -> None:
     raw_path = os.path.join(settings.TEMP_DIR, f"{uid}.ogg")
     mp3_path = os.path.join(settings.TEMP_DIR, f"{uid}.mp3")
 
+    async with connect() as db:
+        list_names = [nl.name for nl in await get_named_lists(db)]
+    list_hint_prompt = (
+        f"Возможные списки: {', '.join(list_names)}." if list_names else None
+    )
+
     try:
         await message.bot.download(voice.file_id, destination=raw_path)
         await to_mp3_16k_mono(raw_path, mp3_path)
-        text = await transcribe_audio(mp3_path)
+        text = await transcribe_audio(mp3_path, list_hint_prompt)
     except Exception:
         logger.exception("Voice processing failed")
         async with connect() as db:
@@ -81,7 +87,7 @@ async def on_voice(message: Message) -> None:
         )
 
     try:
-        parsed = await parse_text(text)
+        parsed, list_hint = await parse_text(text, list_names)
     except Exception:
         logger.exception("Voice text parse failed")
         async with connect() as db:
@@ -100,18 +106,23 @@ async def on_voice(message: Message) -> None:
         return
 
     async with connect() as db:
-        _, names = await add_items(db, parsed, message.from_user.id)
+        target, _mentioned, unresolved = await resolve_target_list(db, list_hint)
+        list_id_target = target.id if target else None
+        _, names = await add_items(db, parsed, message.from_user.id, list_id_target)
         added = [{"name": p.name, "qty": p.qty} for p in parsed if p.name.strip()]
-        title, sub = success_status(names)
+        list_name = target.name if target else None
+        list_key = target.key if target else None
+        title, sub = success_status(names, list_name, unresolved)
         await ingest_state.finish_success(db, event_id, added, title, sub)
 
     me = await message.bot.me()
     await notice.edit_text(
-        f"📝 «{text}»\n\n{format_added(len(names))}",
-        reply_markup=open_app_keyboard(message.chat.type, me.username),
+        f"📝 «{text}»\n\n{format_added(len(names), list_name, unresolved)}",
+        reply_markup=open_app_keyboard(message.chat.type, me.username, list_key),
     )
 
     if names:
         await notify_items_added(
-            message.bot, message.from_user, message.chat.type, names
+            message.bot, message.from_user, message.chat.type, names,
+            list_name=list_name, list_key=list_key, unresolved=unresolved,
         )

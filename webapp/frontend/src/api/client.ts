@@ -3,6 +3,7 @@ import type {
   ApiArchiveList,
   ApiArchivePurchasedResult,
   ApiList,
+  ApiMoveResult,
   ApiReuseResult,
   ApiSetDoneResult,
   ApiState,
@@ -44,7 +45,18 @@ export const deleteItemApi = (
   id: number,
 ): Promise<{ id: number; list_id: number; deleted: boolean }> =>
   api(`/api/items/${id}`, { method: 'DELETE' });
+export const moveItemApi = (id: number, namedListId: number): Promise<ApiMoveResult> =>
+  api(`/api/items/${id}/move`, {
+    method: 'POST',
+    body: JSON.stringify({ named_list_id: namedListId }),
+  });
 export const newListApi = (): Promise<{ id: number }> =>
   api('/api/lists/new', { method: 'POST' });
-export const archivePurchasedApi = (listId: number): Promise<ApiArchivePurchasedResult> =>
-  api(`/api/lists/${listId}/archive-purchased`, { method: 'POST' });
+export const archivePurchasedApi = (
+  listId: number,
+  namedListId?: number | null,
+): Promise<ApiArchivePurchasedResult> =>
+  api(`/api/lists/${listId}/archive-purchased`, {
+    method: 'POST',
+    body: JSON.stringify({ named_list_id: namedListId ?? null }),
+  });

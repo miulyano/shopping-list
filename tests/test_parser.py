@@ -46,20 +46,46 @@ async def test_parse_text_strips_literal_null_string():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("хлеб, молоко")
+        result, _hint = await parse_text("хлеб, молоко")
     assert [i.qty for i in result] == [None, None]
 
 
-def _mk_response(items: list[dict]) -> SimpleNamespace:
+def _mk_response(items: list[dict], list_hint=None) -> SimpleNamespace:
+    payload: dict = {"items": items}
+    if list_hint is not None:
+        payload["list_hint"] = list_hint
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({"items": items})))]
+        choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))]
     )
+
+
+@pytest.mark.asyncio
+async def test_parse_text_extracts_list_hint():
+    response = _mk_response([{"name": "Сыр", "qty": None, "brands": []}], list_hint="Таты")
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
+    )
+    with patch("bot.services.parser.get_client", return_value=fake_client):
+        items, hint = await parse_text("для Таты сыр", ["Общее", "Тата", "Максим"])
+    assert [i.name for i in items] == ["сыр"]
+    assert hint == "Таты"
+
+
+@pytest.mark.asyncio
+async def test_parse_text_no_list_hint_is_none():
+    response = _mk_response([{"name": "Сыр", "qty": None, "brands": []}])
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
+    )
+    with patch("bot.services.parser.get_client", return_value=fake_client):
+        _items, hint = await parse_text("сыр")
+    assert hint is None
 
 
 @pytest.mark.asyncio
 async def test_parse_empty_text_short_circuits():
     with patch("bot.services.parser.get_client") as mock_client:
-        result = await parse_text("   ")
+        result, _hint = await parse_text("   ")
     assert result == []
     mock_client.assert_not_called()
 
@@ -74,7 +100,7 @@ async def test_parse_text_returns_items():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("молоко 1 л, хлеб")
+        result, _hint = await parse_text("молоко 1 л, хлеб")
     assert [i.name for i in result] == ["молоко", "хлеб"]
     assert result[0].qty == "1 л"
     assert result[1].qty is None
@@ -109,7 +135,7 @@ async def test_parse_text_assigns_category():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("молоко, порошок, зубная паста")
+        result, _hint = await parse_text("молоко, порошок, зубная паста")
     assert [i.category for i in result] == ["food", "home", "care"]
 
 
@@ -123,7 +149,7 @@ async def test_parse_text_invalid_category_falls_back_to_food():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("молоко, хлеб")
+        result, _hint = await parse_text("молоко, хлеб")
     assert [i.category for i in result] == ["food", "food"]
 
 
@@ -137,7 +163,7 @@ async def test_parse_text_filters_empty_names():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("сыр 200г")
+        result, _hint = await parse_text("сыр 200г")
     assert [i.name for i in result] == ["сыр"]
 
 
@@ -155,7 +181,7 @@ async def test_parse_text_returns_non_food_items():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("фольга, батарейки 4, наушники, шурупы 50")
+        result, _hint = await parse_text("фольга, батарейки 4, наушники, шурупы 50")
     assert [i.name for i in result] == ["фольга", "батарейки aa", "наушники", "шурупы"]
     assert [i.qty for i in result] == [None, "4 шт", None, "50 шт"]
 
@@ -172,7 +198,7 @@ async def test_parse_text_preserves_brand_case():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("молоко простоквашино, coca-cola 2 шт, iphone")
+        result, _hint = await parse_text("молоко простоквашино, coca-cola 2 шт, iphone")
     assert [i.name for i in result] == [
         "молоко Простоквашино 2.5%",
         "Coca-Cola",
@@ -194,7 +220,7 @@ async def test_parse_text_dedupes_exact_duplicates():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("Яблоки бананы")
+        result, _hint = await parse_text("Яблоки бананы")
     assert [i.name for i in result] == ["яблоки", "бананы"]
 
 
@@ -209,7 +235,7 @@ async def test_parse_text_keeps_same_name_different_qty():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("молоко 1л, молоко 2л")
+        result, _hint = await parse_text("молоко 1л, молоко 2л")
     assert [(i.name, i.qty) for i in result] == [("молоко", "1 л"), ("молоко", "2 л")]
 
 
@@ -220,5 +246,5 @@ async def test_parse_text_handles_bad_json():
         chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=bad)))
     )
     with patch("bot.services.parser.get_client", return_value=fake_client):
-        result = await parse_text("молоко")
+        result, _hint = await parse_text("молоко")
     assert result == []

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.14.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-0.15.0-blue" alt="version">
   <img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey" alt="license">
 </p>
 
@@ -17,7 +17,8 @@ Telegram-бот + Mini App для общего списка покупок. Пр
 - ✨ **Авто-форматирование имён** — все названия товаров сохраняются строчными буквами, а токены брендов и торговых марок (`Coca-Cola`, `iPhone`, `Простоквашино`, `Nestlé`, `Lay's`, …) сохраняют свою каноническую капитализацию. Бренды выделяет LLM, финальную форму гарантирует детерминированный пост-процессор — поэтому «Молоко Простоквашино», «молоко простоквашино» и «МОЛОКО ПРОСТОКВАШИНО» дают одно и то же значение в БД: `молоко Простоквашино`.
 - 🎙 **Голосовое** — `gpt-4o-mini-transcribe` (более точный, чем `whisper-1`) транскрибирует, парсер выделяет товары. Биас-словарь `WHISPER_PROMPT` подсказывает редкие слова (семена чиа, киноа, фольга, изолента и т.п.), чтобы они не путались с похожими по звучанию.
 - 📷 **Фото** — gpt-4o (vision) распознаёт чек, продукты в холодильнике/на полке, рукописные записки.
-- 📲 **Mini App** — один активный список, прогресс-бар, чекбоксы, primary-CTA «Добавить товары» в футере. Свайп влево по строке открывает «Изменить» / «Удалить», bottom-sheet правит название, количество и категорию. Отмеченные товары автоматически уезжают в конец своей категории, неотмеченные остаются сверху; только что отмеченный встаёт последним. Когда все товары отмечены — список автоматически уезжает в архив. На мобилках открывается в fullscreen и не сворачивается случайным вертикальным свайпом. Закрытие — через нативные контролы Telegram.
+- 📲 **Mini App** — несколько именованных списков (вкладки сверху со скроллом, если списков много), прогресс-бар, чекбоксы, primary-CTA «Добавить товары» в футере. Свайп влево по строке открывает «Изменить» / «Удалить», свайп вправо — «Список» (перенести товар в другой список), bottom-sheet'ы правят название/количество/категорию и список. Отмеченные товары автоматически уезжают в конец своей категории, неотмеченные остаются сверху; только что отмеченный встаёт последним. Когда выкуплен весь активный список — он автоматически уезжает в архив (с меткой этого списка). На мобилках открывается в fullscreen и не сворачивается случайным вертикальным свайпом. Закрытие — через нативные контролы Telegram.
+- 🏷 **Именованные списки** — товары разложены по спискам: «Общее» (по умолчанию), «Тата», «Максим» (каталог в таблице `named_lists`, расширяется кодом). При добавлении можно указать список текстом или голосом («для Таты сыр», «купи Максиму батарейки») — бот распарсит адресата и положит товары в нужный список (с учётом склонений). Если список не указан — «Общее»; если указан, но не распознан — «Общее» + предупреждение в ответе/уведомлении. Любой товар можно перенести между списками свайпом вправо. В архиве каждый список помечен цветной меткой.
 - 🗂 **Категории** — каждый товар при разборе получает одну из трёх категорий: **Продукты** (`food`), **Бытовые товары** (`home`), **Косметика и гигиена** (`care`). Категорию проставляет LLM на этапе парсинга, а вручную её можно сменить в шторке «Изменить товар» (если разбор ошибся). В Mini App список и архивные карточки сгруппированы по категориям с заголовками (`done/total` у активного списка); пустые группы скрыты, внутри группы купленные уезжают вниз. Товары без категории (старые записи) показываются в «Продукты». Бэкфилл существующих — `scripts/backfill_categories.py`.
 - 🧹 **«Убрать купленное»** — кнопка в прогресс-баре активного списка. Появляется, когда часть товаров куплена, а часть ещё нет. Купленные переезжают в новый архивный список, активный остаётся только с непокупленными. История покупок сохраняется в архиве.
 - 🗂 **Архив** — список архивных карточек с датой+временем создания. Внутри карточки: «Добавить в текущий список» / «Создать новый список» (всё снимается с галочки) или «Удалить список» с подтверждением.
@@ -25,7 +26,7 @@ Telegram-бот + Mini App для общего списка покупок. Пр
 - 👥 **Whitelist** — `ALLOWED_USER_IDS` ограничивает, кто может писать боту и открывать Mini App.
 - 💬 **Группа + личка** — бот работает в одном групповом чате (`TARGET_CHAT_ID`) и в DM whitelisted-юзеров. Список общий.
 - 🔔 **Статус в чате** — на каждое входящее сообщение бот шлёт промежуточный статус («📝 Разбираю…», «📷 Распознаю фото…», «🎙 Слушаю…») и заменяет его финалом «✓ Добавил N товаров». В групповом чате ответы привязаны reply'ем к исходному сообщению.
-- 🔔 **Уведомления другим участникам** — когда кто-то добавил товары, остальные узнают об этом. Добавление в группе → ЛС каждому участнику whitelist, кроме автора. Добавление в ЛС с ботом → пост в группу с `@username`-тегами участников кроме автора (в forum-группе — в запиненный топик) плюс дублирующее ЛС каждому, кроме автора. В уведомлении — имя автора, список добавленных товаров и кнопка «🛒 Список». Username для тега берётся live из Telegram (`get_chat_member`); у кого нет публичного username — тег не ставится (Telegram не даёт реального тега без него), но ЛС всё равно приходит. ЛС доходят только тем, кто стартовал бота приватно.
+- 🔔 **Уведомления другим участникам** — когда кто-то добавил товары, остальные узнают об этом. Добавление в группе → ЛС каждому участнику whitelist, кроме автора. Добавление в ЛС с ботом → пост в группу с `@username`-тегами участников кроме автора (в forum-группе — в запиненный топик) плюс дублирующее ЛС каждому, кроме автора. В уведомлении — имя автора, **в какой список** добавлено, список товаров и кнопка «🛒 Список», ведущая сразу на этот список (deep-link). Username для тега берётся live из Telegram (`get_chat_member`); у кого нет публичного username — тег не ставится (Telegram не даёт реального тега без него), но ЛС всё равно приходит. ЛС доходят только тем, кто стартовал бота приватно.
 - 🛒 **Mini App из группы** — кнопка «🛒 Список» работает и в DM (через `WebAppInfo`), и в группе (через direct-link `t.me/<bot>/<short_name>`, см. `WEBAPP_SHORT_NAME`). При добавлении бота в группу он автоматически шлёт приветственное сообщение с кнопкой и пинит его. Если автопин не сработал — `/pin` в группе делает то же руками.
 
 **Команды бота:**
@@ -74,14 +75,14 @@ shopping-list/
 │   │   ├── ingest_state.py     # прогресс ингеста для Mini App status banner
 │   │   └── temp_cleanup.py     # периодическая чистка TEMP_DIR
 │   └── db/
-│       ├── schema.sql          # lists, items (+ category), ingest_events, app_settings
+│       ├── schema.sql          # named_lists, lists, items (+ category, named_list_id), ingest_events, app_settings
 │       ├── store.py            # connect, init_db (+ guarded ALTER миграции)
 │       ├── settings_kv.py      # key/value стор (pinned_thread_id и т.п.)
 │       └── models.py
 ├── webapp/
 │   ├── main.py                 # FastAPI app + lifespan
 │   ├── auth.py                 # initData HMAC verification
-│   ├── api.py                  # /api/state /api/archive[/{id}[/reuse]] /api/items/{id}[/state] /api/lists/new /api/lists/{id}/archive-purchased
+│   ├── api.py                  # /api/state /api/archive[/{id}[/reuse]] /api/items/{id}[/state|/move] /api/lists/new /api/lists/{id}/archive-purchased
 │   ├── frontend/               # Mini App SPA (Vite + React 19 + TS 5)
 │   │   ├── package.json
 │   │   ├── vite.config.ts
@@ -96,7 +97,7 @@ shopping-list/
 │   │       ├── icons.tsx       # SVG-иконки (Plus, Mic, Camera, Check, Cart, Archive, ...)
 │   │       ├── lib/            # telegram.ts, constants.ts, format.ts, primary.ts, categories.ts
 │   │       ├── api/client.ts   # fetch-обёртка с X-Telegram-Init-Data
-│   │       ├── components/     # GroupedList, ItemRow, EditSheet, ConfirmSheet, Progress, StatusBanner, ChatHint, StarterScreen, EmptyState, ArchiveScreen, ArchiveDetailScreen
+│   │       ├── components/     # GroupedList, ItemRow, ListTabs, ListChip, MoveSheet, EditSheet, ConfirmSheet, Progress, StatusBanner, ChatHint, StarterScreen, EmptyState, ArchiveScreen, ArchiveDetailScreen
 │   │       └── styles/globals.css  # анимации, safe-area, скрытие скроллбара
 │   └── static/                 # gitignored: артефакт `vite build` (index.html + assets/*)
 ├── tests/
@@ -291,7 +292,7 @@ pip install -r requirements-dev.txt
 pytest -v
 ```
 
-Покрыто: парсер (нормализация количеств, контекст единиц), whitelist-авторизация, клавиатура Mini App (DM/группа), бизнес-логика списков (add/toggle/update/delete, архив, reuse), ingest-state для status banner, HMAC-валидация initData Mini App, REST API (`/api/state`, `/api/items/{id}[/toggle]`, `/api/archive[/{id}[/reuse]]`, `/api/lists/new`).
+Покрыто: парсер (нормализация количеств, контекст единиц, `list_hint`), whitelist-авторизация, клавиатура Mini App (DM/группа, deep-link на список), бизнес-логика списков (add/toggle/update/delete/move, архив по списку, reuse в родной список), именованные списки (сид-каталог, бэкфилл, резолв адресата со склонениями), ingest-state для status banner, HMAC-валидация initData Mini App, REST API (`/api/state` с каталогом, `/api/items/{id}[/state|/move]`, `/api/archive[/{id}[/reuse]]`, `/api/lists/new`).
 
 **Frontend (TypeScript):**
 
@@ -301,7 +302,7 @@ npm install
 npm run lint                  # ESLint flat config (typescript-eslint, react-hooks, react-refresh)
 npx tsc --noEmit              # type-check
 npm run build                 # tsc + vite build
-npm run test                  # Vitest + jsdom + Testing Library (~50 тестов)
+npm run test                  # Vitest + jsdom + Testing Library (~62 теста)
 ```
 
 Покрыто (Vitest):
@@ -311,7 +312,8 @@ npm run test                  # Vitest + jsdom + Testing Library (~50 тесто
 - `ItemRow` — render name/qty, toggle/edit/delete handlers, strikethrough на `done`.
 - `EditSheet` — prefilled inputs, trim'ы, blank-name reject, Enter-to-save, Отмена.
 - `ConfirmSheet` — confirm / cancel / overlay-cancel.
-- `App` — view-роутинг (Starter / EmptyDone / List / Archive), оптимистичный toggle (`POST /api/items/:id/toggle`), polling /api/state каждые 2000 мс при visible вкладке.
+- `App` — view-роутинг (Starter / List / Archive), вкладки списков + фильтрация по активному списку, оптимистичный toggle (`POST /api/items/:id/state`) и оптимистичный move (`POST /api/items/:id/move`) с reconciliation на поллинге, polling /api/state каждые 2000 мс при visible вкладке.
+- `ListTabs` / `MoveSheet` / `getStartList` — рендер вкладок и onChange, перенос товара в выбранный список, чтение deep-link (`start_param` / `#list=`).
 
 См. `CLAUDE.md` — тесты править нельзя, чтобы они проходили; чинить нужно код.
 

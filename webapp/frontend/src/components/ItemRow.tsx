@@ -5,31 +5,37 @@ import { SF } from '../lib/constants';
 import { Icon } from '../icons';
 import type { ApiItem } from '../types';
 
+export type OpenRow = { id: number; side: 'left' | 'right' } | null;
+
 interface Props {
   item: ApiItem;
   onToggle: (id: number) => void;
   onEdit: (item: ApiItem) => void;
   onDelete: (item: ApiItem) => void;
+  onMove: (item: ApiItem) => void;
+  canMove: boolean;
   isLast: boolean;
-  openId: number | null;
-  setOpenId: (id: number | null) => void;
+  openId: OpenRow;
+  setOpenId: (open: OpenRow) => void;
 }
 
-export function ItemRow({ item, onToggle, onEdit, onDelete, isLast, openId, setOpenId }: Props) {
-  const ACTION_W = 76;
-  const REVEAL = ACTION_W * 2;
-  const isOpen = openId === item.id;
+export function ItemRow({ item, onToggle, onEdit, onDelete, onMove, canMove, isLast, openId, setOpenId }: Props) {
+  const ACTION_W = 76;          // edit / delete button width
+  const REVEAL_R = ACTION_W * 2; // trailing actions total width
+  const LEFT_W = 86;             // leading "move to list" action width
+  const isOpenRight = openId?.id === item.id && openId.side === 'right';
+  const isOpenLeft = openId?.id === item.id && openId.side === 'left';
   const [drag, setDrag] = useState(0);
   const startX = useRef<number | null>(null);
-  const startOffset = useRef(0);
   const moved = useRef(false);
 
-  const offset = isOpen ? -REVEAL + drag : drag;
-  const clampedOffset = Math.max(-REVEAL - 30, Math.min(0, offset));
+  const restOffset = isOpenRight ? -REVEAL_R : isOpenLeft ? LEFT_W : 0;
+  const minOff = -(REVEAL_R + 30);
+  const maxOff = canMove ? LEFT_W + 30 : 0;
+  const clampedOffset = Math.max(minOff, Math.min(maxOff, restOffset + drag));
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     startX.current = e.clientX;
-    startOffset.current = isOpen ? -REVEAL : 0;
     moved.current = false;
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
@@ -37,32 +43,53 @@ export function ItemRow({ item, onToggle, onEdit, onDelete, isLast, openId, setO
     if (startX.current === null) return;
     const dx = e.clientX - startX.current;
     if (Math.abs(dx) > 4) moved.current = true;
-    const next = startOffset.current + dx;
-    setDrag(next - (isOpen ? -REVEAL : 0));
+    setDrag(dx);
   };
   const onPointerUp = () => {
     if (startX.current === null) return;
-    const dx = drag + (isOpen ? -REVEAL : 0);
-    if (dx < -REVEAL / 2) setOpenId(item.id);
+    const final = restOffset + drag;
+    if (final <= -REVEAL_R / 2) setOpenId({ id: item.id, side: 'right' });
+    else if (canMove && final >= LEFT_W / 2) setOpenId({ id: item.id, side: 'left' });
     else setOpenId(null);
     setDrag(0);
     startX.current = null;
-    setTimeout(() => {
-      moved.current = false;
-    }, 50);
+    setTimeout(() => { moved.current = false; }, 50);
   };
 
   const handleClick = () => {
     if (moved.current) return;
-    if (isOpen) {
-      setOpenId(null);
-      return;
-    }
+    if (isOpenRight || isOpenLeft) { setOpenId(null); return; }
     onToggle(item.id);
   };
 
   return (
     <div style={{ position: 'relative', overflow: 'hidden', background: T.card }}>
+      {/* leading action — change which list (revealed on swipe right) */}
+      {canMove && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, bottom: 0,
+          display: 'flex', alignItems: 'stretch',
+        }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpenId(null); onMove(item); }}
+            style={{
+              width: LEFT_W, border: 'none', cursor: 'pointer',
+              background: T.blue, color: '#fff',
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 4,
+              fontFamily: SF, fontSize: 12, fontWeight: 500,
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M4 6h9M4 10h9M4 14h5.5" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/>
+              <path d="M13.5 12l2.5 2.5-2.5 2.5" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Список
+          </button>
+        </div>
+      )}
+
+      {/* trailing actions — edit / delete (revealed on swipe left) */}
       <div style={{
         position: 'absolute', top: 0, right: 0, bottom: 0,
         display: 'flex', alignItems: 'stretch',

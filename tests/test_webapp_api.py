@@ -57,6 +57,39 @@ def test_state_empty(client, headers):
     assert body["archive_count"] == 0
 
 
+def test_state_returns_named_list_catalogue(client, headers):
+    body = client.get("/api/state", headers=headers).json()
+    keys = [nl["key"] for nl in body["lists"]]
+    assert keys == ["general", "tata", "maksim"]
+    assert any(nl["is_default"] for nl in body["lists"])
+
+
+def test_state_items_carry_named_list_id(client, headers):
+    _seed_items([("Молоко", None)])
+    body = client.get("/api/state", headers=headers).json()
+    item = body["active_list"]["items"][0]
+    assert item["named_list_id"] is not None
+
+
+def test_move_item_endpoint(client, headers):
+    ids = _seed_items([("Молоко", None)])
+    lists = client.get("/api/state", headers=headers).json()["lists"]
+    maksim = next(nl["id"] for nl in lists if nl["key"] == "maksim")
+    r = client.post(
+        f"/api/items/{ids[0]}/move", headers=headers,
+        json={"named_list_id": maksim},
+    )
+    assert r.status_code == 200
+    assert r.json()["named_list_id"] == maksim
+    body = client.get("/api/state", headers=headers).json()
+    assert body["active_list"]["items"][0]["named_list_id"] == maksim
+
+
+def test_move_item_unknown_returns_404(client, headers):
+    r = client.post("/api/items/9999/move", headers=headers, json={"named_list_id": 1})
+    assert r.status_code == 404
+
+
 def test_state_requires_auth(client):
     r = client.get("/api/state")
     assert r.status_code == 401
@@ -107,7 +140,8 @@ def test_set_state_archives_when_all_done(client, headers):
     assert r2.json()["archived"] is True
 
     state = client.get("/api/state", headers=headers).json()
-    assert state["active_list"] is None
+    # active session persists (empty) — bought items moved to an archived snapshot
+    assert state["active_list"]["items"] == []
     assert state["archive_count"] == 1
 
 

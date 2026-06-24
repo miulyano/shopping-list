@@ -6,18 +6,21 @@ import { fmtDateTime, fmtDateTimeCaps } from '../lib/format';
 import { usePrimary } from '../lib/primary';
 import { deleteArchive, fetchArchiveOne, reuseArchive } from '../api/client';
 import { CATEGORIES, catKey } from '../lib/categories';
-import type { ApiList } from '../types';
+import { pluralRu } from '../lib/format';
+import type { ApiList, NamedList } from '../types';
 import { ConfirmSheet } from './ConfirmSheet';
+import { ListChip } from './ListChip';
 
 interface Props {
   listId: number;
+  lists: NamedList[];
   hasActive: boolean;
   onBack: () => void;
   onAfterReuse: () => void;
   onAfterDelete: () => void;
 }
 
-export function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, onAfterDelete }: Props) {
+export function ArchiveDetailScreen({ listId, lists, hasActive, onBack, onAfterReuse, onAfterDelete }: Props) {
   const [list, setList] = useState<ApiList | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -109,10 +112,14 @@ export function ArchiveDetailScreen({ listId, hasActive, onBack, onAfterReuse, o
       <div style={{ padding: '4px 22px 14px' }}>
         <div style={{
           fontFamily: SF, fontSize: 12, color: T.text2, letterSpacing: 0.4,
-          textTransform: 'uppercase', fontWeight: 600, marginBottom: 6,
+          textTransform: 'uppercase', fontWeight: 600, marginBottom: 10,
         }}>{fmtDateTimeCaps(createdAt)}</div>
-        <div style={{ fontFamily: SF, fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: T.text, lineHeight: 1.15 }}>
-          Список покупок
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ListChip namedListId={list.named_list_id} lists={lists} big/>
+          <span style={{
+            fontFamily: SF, fontSize: 15, color: T.text2, letterSpacing: -0.2,
+            fontVariantNumeric: 'tabular-nums',
+          }}>{list.items.length} {pluralRu(list.items.length, ['товар', 'товара', 'товаров'])}</span>
         </div>
       </div>
 

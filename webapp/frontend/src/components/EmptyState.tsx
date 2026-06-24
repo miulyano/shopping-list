@@ -46,7 +46,7 @@ export function EmptyState({ kind, onCreate, archiveCount, onOpenArchive }: Prop
         cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
       }}>
         <Icon.Plus s={20} c={primary.color}/>
-        Новый список
+        {isDone ? 'Новый список' : 'Добавить товары'}
       </button>
 
       {archiveCount > 0 && (

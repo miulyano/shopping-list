@@ -14,22 +14,24 @@ function mockFetch(handlers: Record<string, () => unknown>) {
 }
 
 function emptyState(): ApiState {
-  return { active_list: null, archive_count: 0, ingest: null };
+  return { active_list: null, archive_count: 0, ingest: null, lists: [] };
 }
 
 function emptyDoneState(): ApiState {
   return {
-    active_list: { id: 1, created_at: 0, archived_at: null, items: [] },
+    active_list: { id: 1, created_at: 0, archived_at: null, named_list_id: null, items: [] },
     archive_count: 3,
     ingest: null,
+    lists: [],
   };
 }
 
 function listState(items: ApiItem[]): ApiState {
   return {
-    active_list: { id: 1, created_at: 0, archived_at: null, items },
+    active_list: { id: 1, created_at: 0, archived_at: null, named_list_id: null, items },
     archive_count: 2,
     ingest: null,
+    lists: [],
   };
 }
 
@@ -48,20 +50,20 @@ describe('App view states', () => {
     expect(screen.getByText('Фото')).toBeInTheDocument();
   });
 
-  it('renders EmptyState (done) when list empty but archive exists', async () => {
+  it('renders empty-tab state when active list empty but archive exists', async () => {
     mockFetch({ '/api/state': emptyDoneState });
     render(<App />);
-    await waitFor(() => expect(screen.getByText('Все товары куплены')).toBeInTheDocument());
-    expect(screen.getByText('Новый список')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Список покупок пуст')).toBeInTheDocument());
+    expect(screen.getByText('Добавить товары')).toBeInTheDocument();
     expect(screen.getByText('Архив списков · 3')).toBeInTheDocument();
   });
 
   it('renders list view with items and progress', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food' },
-        { id: 11, name: 'хлеб', qty: null, done: true, position: 1, category: 'food' },
-        { id: 12, name: 'яйца', qty: '10 шт', done: false, position: 2, category: 'food' },
+        { id: 10, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food', named_list_id: null },
+        { id: 11, name: 'хлеб', qty: null, done: true, position: 1, category: 'food', named_list_id: null },
+        { id: 12, name: 'яйца', qty: '10 шт', done: false, position: 2, category: 'food', named_list_id: null },
       ]),
     });
     render(<App />);
@@ -69,7 +71,7 @@ describe('App view states', () => {
     expect(screen.getByText('хлеб')).toBeInTheDocument();
     expect(screen.getByText('яйца')).toBeInTheDocument();
     expect(screen.getByText('1 из 3')).toBeInTheDocument();
-    expect(screen.getByText('Архив · 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Архив')).toBeInTheDocument();
     expect(screen.getByText('Добавить товары')).toBeInTheDocument();
     expect(screen.getByText('Убрать купленное')).toBeInTheDocument();
   });
@@ -77,9 +79,9 @@ describe('App view states', () => {
   it('groups items by category and skips empty groups', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food' },
-        { id: 11, name: 'порошок', qty: null, done: false, position: 1, category: 'home' },
-        { id: 12, name: 'губки', qty: '5 шт', done: false, position: 2, category: 'home' },
+        { id: 10, name: 'молоко', qty: '1 л', done: false, position: 0, category: 'food', named_list_id: null },
+        { id: 11, name: 'порошок', qty: null, done: false, position: 1, category: 'home', named_list_id: null },
+        { id: 12, name: 'губки', qty: '5 шт', done: false, position: 2, category: 'home', named_list_id: null },
       ]),
     });
     render(<App />);
@@ -95,7 +97,7 @@ describe('App view states', () => {
   it('treats null/legacy category as Продукты', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: null },
+        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: null, named_list_id: null },
       ]),
     });
     render(<App />);
@@ -106,7 +108,7 @@ describe('App view states', () => {
   it('does not show "Убрать купленное" when nothing is done', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food' },
+        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food', named_list_id: null },
       ]),
     });
     render(<App />);
@@ -117,8 +119,8 @@ describe('App view states', () => {
   it('shows "Все товары куплены" overlay when allDone', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: null, done: true, position: 0, category: 'food' },
-        { id: 11, name: 'хлеб', qty: null, done: true, position: 1, category: 'food' },
+        { id: 10, name: 'молоко', qty: null, done: true, position: 0, category: 'food', named_list_id: null },
+        { id: 11, name: 'хлеб', qty: null, done: true, position: 1, category: 'food', named_list_id: null },
       ]),
     });
     render(<App />);
@@ -128,15 +130,14 @@ describe('App view states', () => {
   it('navigates to ArchiveScreen via header pill', async () => {
     mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food' },
+        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food', named_list_id: null },
       ]),
       '/api/archive': () => ({ lists: [] }),
     });
     render(<App />);
-    await waitFor(() => expect(screen.getByText('Архив · 2')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Архив · 2'));
-    await waitFor(() => expect(screen.getByText('Пока нет архивных списков')).toBeInTheDocument());
-    expect(screen.getByText('Архив')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Архив')).toBeInTheDocument());
+    fireEvent.click(screen.getByLabelText('Архив'));
+    await waitFor(() => expect(screen.getByText('Архив пуст')).toBeInTheDocument());
     expect(screen.getByText('К списку')).toBeInTheDocument();
   });
 });
@@ -145,7 +146,7 @@ describe('App optimistic toggle', () => {
   it('sends POST /api/items/:id/state with done:true on row click', async () => {
     const f = mockFetch({
       '/api/state': () => listState([
-        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food' },
+        { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food', named_list_id: null },
       ]),
       '/api/items/10/state': () => ({ list_id: 1, done: true, archived: false }),
     });
@@ -176,7 +177,7 @@ describe('App optimistic toggle', () => {
           ok: true,
           status: 200,
           json: async () => listState([
-            { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food' },
+            { id: 10, name: 'молоко', qty: null, done: false, position: 0, category: 'food', named_list_id: null },
           ]),
         } as Response);
       }
