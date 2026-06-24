@@ -250,6 +250,26 @@ async def test_update_item_sets_qty_to_none_when_blank(db):
 
 
 @pytest.mark.asyncio
+async def test_update_item_changes_category(db):
+    await add_items(db, [ParsedItem("Молоко", "1 л", category="food")], user_id=111)
+    item_id = (await get_state(db)).items[0].id
+
+    await update_item(db, item_id, "Молоко", "1 л", "home")
+    state = await get_state(db)
+    assert state.items[0].category == "home"
+
+
+@pytest.mark.asyncio
+async def test_update_item_keeps_category_when_omitted(db):
+    await add_items(db, [ParsedItem("Молоко", "1 л", category="care")], user_id=111)
+    item_id = (await get_state(db)).items[0].id
+
+    await update_item(db, item_id, "Молоко 2,5%", "2 л")
+    state = await get_state(db)
+    assert state.items[0].category == "care"
+
+
+@pytest.mark.asyncio
 async def test_update_unknown_item_returns_none(db):
     assert await update_item(db, 9999, "x", None) is None
 

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from bot.config import settings
 from bot.db.store import connect
 from bot.services import ingest_state
+from bot.services.parser import normalize_category
 from bot.services.shopping import (
     archive_count,
     archive_purchased,
@@ -73,6 +74,7 @@ def _ingest_to_dict(ev) -> dict:
 class ItemPatch(BaseModel):
     name: str
     qty: str | None = None
+    category: str | None = None
 
 
 class ItemState(BaseModel):
@@ -146,11 +148,20 @@ async def patch_item(
     name = payload.name.strip()
     if not name:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "name is required")
+    category = (
+        normalize_category(payload.category) if payload.category is not None else None
+    )
     async with connect() as db:
-        list_id = await update_item(db, item_id, name, payload.qty)
+        list_id = await update_item(db, item_id, name, payload.qty, category)
     if list_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
-    return {"id": item_id, "list_id": list_id, "name": name, "qty": payload.qty}
+    return {
+        "id": item_id,
+        "list_id": list_id,
+        "name": name,
+        "qty": payload.qty,
+        "category": category,
+    }
 
 
 @router.delete("/items/{item_id}")

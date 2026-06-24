@@ -196,10 +196,14 @@ export function App() {
 
   const onSaveEdit = async (updated: ApiItem) => {
     try {
-      await patchItemApi(updated.id, { name: updated.name, qty: updated.qty });
+      await patchItemApi(updated.id, {
+        name: updated.name,
+        qty: updated.qty,
+        category: updated.category ?? undefined,
+      });
       setActive((prev) => prev ? {
         ...prev,
-        items: prev.items.map((it) => (it.id === updated.id ? { ...it, name: updated.name, qty: updated.qty } : it)),
+        items: prev.items.map((it) => (it.id === updated.id ? { ...it, name: updated.name, qty: updated.qty, category: updated.category } : it)),
       } : prev);
     } catch (e) {
       console.error('patch failed', e);

@@ -42,6 +42,9 @@ tmp/
 # Design handoffs — local-only assets
 design/
 
+# Local Claude Code worktrees / scratch
+/.claude/
+
 # Frontend build artifacts (Vite outputs into webapp/static/)
 /webapp/static/
 /webapp/frontend/node_modules/

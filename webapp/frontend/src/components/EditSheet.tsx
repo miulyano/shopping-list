@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { T } from '../theme';
 import { SF } from '../lib/constants';
+import { CATEGORIES, catKey } from '../lib/categories';
 import type { ApiItem } from '../types';
 
 interface Props {
@@ -12,10 +13,11 @@ interface Props {
 export function EditSheet({ item, onClose, onSave }: Props) {
   const [name, setName] = useState(item?.name || '');
   const [qty, setQty] = useState(item?.qty || '');
+  const [cat, setCat] = useState(catKey(item?.category));
   if (!item) return null;
   const save = () => {
     if (!name.trim()) return;
-    onSave({ ...item, name: name.trim(), qty: qty.trim() || null });
+    onSave({ ...item, name: name.trim(), qty: qty.trim() || null, category: cat });
   };
   return (
     <div style={{
@@ -95,6 +97,40 @@ export function EditSheet({ item, onClose, onSave }: Props) {
           padding: '8px 12px 0', lineHeight: 1.4,
         }}>
           Количество необязательно. Можно указать вес, объём или штуки.
+        </div>
+
+        {/* category — fix wrong auto-categorisation */}
+        <div style={{
+          fontFamily: SF, fontSize: 12, color: T.text2, letterSpacing: -0.08,
+          textTransform: 'uppercase', fontWeight: 500,
+          padding: '20px 12px 7px',
+        }}>Категория</div>
+        <div style={{ background: T.card, borderRadius: 14, overflow: 'hidden' }}>
+          {CATEGORIES.map((c, i) => {
+            const active = cat === c.key;
+            return (
+              <button key={c.key} onClick={() => setCat(c.key)} style={{
+                width: '100%', border: 'none', background: 'transparent',
+                cursor: 'pointer', display: 'flex', alignItems: 'center',
+                minHeight: 48, padding: '0 16px', position: 'relative',
+                fontFamily: SF, fontSize: 17, letterSpacing: -0.4,
+                color: T.text, textAlign: 'left',
+              }}>
+                <span style={{ flex: 1 }}>{c.label}</span>
+                {active && (
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                    <path d="M3.5 9.5l3.5 3.5L14.5 5" stroke={T.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+                {i < CATEGORIES.length - 1 && (
+                  <div style={{
+                    position: 'absolute', bottom: 0, left: 16, right: 0,
+                    height: 0.5, background: T.sep,
+                  }}/>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
