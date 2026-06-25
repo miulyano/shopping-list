@@ -62,7 +62,7 @@ def _items_block(
     where = f" в список «{html.escape(list_name)}»" if list_name else " в список"
     header = f"<b>{html.escape(adder_name)}</b> добавил(а) {len(names)} {word}{where}:"
     lines = "\n".join(f"• {html.escape(n)}" for n in names)
-    block = f"{header}\n{lines}"
+    block = f"{header}\n\n{lines}"
     if unresolved:
         block += "\n\n⚠️ Не распознал, в какой список — положил в «Общее»."
     return block
