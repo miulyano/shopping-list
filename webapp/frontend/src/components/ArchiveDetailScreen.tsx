@@ -2,28 +2,28 @@ import { useEffect, useState } from 'react';
 import { T } from '../theme';
 import { SF, TOP_INSET } from '../lib/constants';
 import { Icon } from '../icons';
-import { fmtDateTime, fmtDateTimeCaps } from '../lib/format';
+import { fmtDateTime } from '../lib/format';
 import { usePrimary } from '../lib/primary';
 import { deleteArchive, fetchArchiveOne, reuseArchive } from '../api/client';
 import { CATEGORIES, catKey } from '../lib/categories';
 import { pluralRu } from '../lib/format';
 import type { ApiList, NamedList } from '../types';
 import { ConfirmSheet } from './ConfirmSheet';
-import { ListChip } from './ListChip';
+import { AddToListSheet } from './AddToListSheet';
 
 interface Props {
   listId: number;
   lists: NamedList[];
-  hasActive: boolean;
   onBack: () => void;
   onAfterReuse: () => void;
   onAfterDelete: () => void;
 }
 
-export function ArchiveDetailScreen({ listId, lists, hasActive, onBack, onAfterReuse, onAfterDelete }: Props) {
+export function ArchiveDetailScreen({ listId, lists, onBack, onAfterReuse, onAfterDelete }: Props) {
   const [list, setList] = useState<ApiList | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const primary = usePrimary();
 
@@ -45,18 +45,21 @@ export function ArchiveDetailScreen({ listId, lists, hasActive, onBack, onAfterR
 
   const createdAt = new Date(list.created_at * 1000);
   const dateForConfirm = fmtDateTime(createdAt);
-  const reuseLabel = hasActive ? 'Добавить в текущий список' : 'Создать новый список';
+  const named = lists.find((l) => l.id === list.named_list_id);
+  const listColor = named?.color ?? T.text2;
+  const listName = named?.name ?? 'Список';
 
   // group archived items by category (all bought) — skip empty groups
   const groups = CATEGORIES
     .map((c) => ({ key: c.key, label: c.label, items: list.items.filter((it) => catKey(it.category) === c.key) }))
     .filter((g) => g.items.length > 0);
 
-  const doReuse = async () => {
+  const doReuse = async (targetId: number, itemIds: number[]) => {
     if (busy) return;
+    setPicking(false);
     setBusy(true);
     try {
-      await reuseArchive(listId);
+      await reuseArchive(listId, { named_list_id: targetId, item_ids: itemIds });
       onAfterReuse();
     } catch (e) {
       console.error('reuse failed', e);
@@ -82,8 +85,23 @@ export function ArchiveDetailScreen({ listId, lists, hasActive, onBack, onAfterR
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{
         padding: `${TOP_INSET}px 16px 12px`,
+        position: 'relative',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
       }}>
+        <div style={{
+          position: 'absolute', left: 0, right: 0, top: TOP_INSET,
+          height: 36, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+        }}>
+          <span style={{
+            fontFamily: SF, fontSize: 10, fontWeight: 600, color: T.text3,
+            letterSpacing: 0.5, textTransform: 'uppercase', lineHeight: 1,
+          }}>Архивирован</span>
+          <span style={{
+            fontFamily: SF, fontSize: 14.5, fontWeight: 600, color: T.text,
+            letterSpacing: -0.2, fontVariantNumeric: 'tabular-nums', marginTop: 3,
+          }}>{fmtDateTime(createdAt)}</span>
+        </div>
         <button onClick={onBack} style={{
           height: 36, padding: '0 14px 0 10px', borderRadius: 18,
           background: T.pillBg, border: 'none', color: T.text,
@@ -109,17 +127,25 @@ export function ArchiveDetailScreen({ listId, lists, hasActive, onBack, onAfterR
         </button>
       </div>
 
-      <div style={{ padding: '4px 22px 14px' }}>
+      <div style={{
+        padding: '6px 22px 16px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 5, flexShrink: 0, background: listColor }}/>
+          <h1 style={{
+            margin: 0, fontFamily: SF, fontSize: 19, fontWeight: 600,
+            letterSpacing: -0.4, color: T.text, lineHeight: 1.1,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{listName}</h1>
+        </div>
         <div style={{
-          fontFamily: SF, fontSize: 12, color: T.text2, letterSpacing: 0.4,
-          textTransform: 'uppercase', fontWeight: 600, marginBottom: 10,
-        }}>{fmtDateTimeCaps(createdAt)}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <ListChip namedListId={list.named_list_id} lists={lists} big/>
-          <span style={{
-            fontFamily: SF, fontSize: 15, color: T.text2, letterSpacing: -0.2,
-            fontVariantNumeric: 'tabular-nums',
-          }}>{list.items.length} {pluralRu(list.items.length, ['товар', 'товара', 'товаров'])}</span>
+          display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+          fontFamily: SF, fontSize: 14, color: T.accent, letterSpacing: -0.1,
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+          <Icon.Check s={12} c={T.accent}/>
+          {list.items.length} {pluralRu(list.items.length, ['товар', 'товара', 'товаров'])}
         </div>
       </div>
 
@@ -173,16 +199,25 @@ export function ArchiveDetailScreen({ listId, lists, hasActive, onBack, onAfterR
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
         borderTop: `0.5px solid ${T.sep}`,
       }}>
-        <button onClick={doReuse} disabled={busy} style={{
+        <button onClick={() => setPicking(true)} disabled={busy} style={{
           width: '100%', height: 52, borderRadius: 14,
           ...primary,
           fontFamily: SF, fontSize: 17, fontWeight: 600, letterSpacing: -0.4,
           cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          {reuseLabel}
+          Добавить в список
         </button>
       </div>
+
+      {picking && (
+        <AddToListSheet
+          list={list}
+          lists={lists}
+          onClose={() => setPicking(false)}
+          onAdd={doReuse}
+        />
+      )}
 
       {confirmDel && (
         <ConfirmSheet

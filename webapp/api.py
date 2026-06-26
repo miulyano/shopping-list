@@ -104,6 +104,11 @@ class ArchivePurchased(BaseModel):
     named_list_id: int | None = None
 
 
+class ReuseBody(BaseModel):
+    named_list_id: int | None = None
+    item_ids: list[int] | None = None
+
+
 @router.get("/state")
 async def state(user_id: int = Depends(current_user)) -> dict:
     async with connect() as db:
@@ -136,9 +141,14 @@ async def archive_detail(list_id: int, _: int = Depends(current_user)) -> dict:
 
 
 @router.post("/archive/{list_id}/reuse")
-async def archive_reuse(list_id: int, user_id: int = Depends(current_user)) -> dict:
+async def archive_reuse(
+    list_id: int,
+    body: ReuseBody | None = None,
+    user_id: int = Depends(current_user),
+) -> dict:
+    b = body or ReuseBody()
     async with connect() as db:
-        result = await reuse_archive_list(db, list_id, user_id)
+        result = await reuse_archive_list(db, list_id, user_id, b.named_list_id, b.item_ids)
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "archive list not found")
     active_id, added = result

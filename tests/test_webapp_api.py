@@ -278,6 +278,38 @@ def test_reuse_creates_new_active_when_none(client, headers):
     assert all(not i["done"] for i in items)
 
 
+def test_reuse_subset_adds_only_selected(client, headers):
+    _seed_items([("Молоко", "1 л"), ("Хлеб", None), ("Сыр", None)])
+    archived_id = _archive_active()
+
+    detail = client.get(f"/api/archive/{archived_id}", headers=headers).json()
+    keep = [it["id"] for it in detail["items"] if it["name"] == "хлеб"]
+
+    r = client.post(f"/api/archive/{archived_id}/reuse", headers=headers, json={"item_ids": keep})
+    assert r.status_code == 200
+    assert r.json()["added"] == 1
+
+    items = client.get("/api/state", headers=headers).json()["active_list"]["items"]
+    assert [i["name"] for i in items] == ["хлеб"]
+
+
+def test_reuse_named_list_override(client, headers):
+    _seed_items([("Молоко", None), ("Хлеб", None)])
+    archived_id = _archive_active()
+
+    lists = client.get("/api/state", headers=headers).json()["lists"]
+    target = next(l["id"] for l in lists if not l["is_default"])
+
+    r = client.post(
+        f"/api/archive/{archived_id}/reuse", headers=headers, json={"named_list_id": target}
+    )
+    assert r.status_code == 200
+    assert r.json()["added"] == 2
+
+    items = client.get("/api/state", headers=headers).json()["active_list"]["items"]
+    assert all(i["named_list_id"] == target for i in items)
+
+
 def test_reuse_unknown_archive_404(client, headers):
     r = client.post("/api/archive/9999/reuse", headers=headers)
     assert r.status_code == 404
