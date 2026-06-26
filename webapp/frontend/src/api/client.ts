@@ -30,8 +30,11 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export const fetchState = (): Promise<ApiState> => api('/api/state');
 export const fetchArchive = (): Promise<ApiArchiveList> => api('/api/archive');
 export const fetchArchiveOne = (id: number): Promise<ApiList> => api(`/api/archive/${id}`);
-export const reuseArchive = (id: number): Promise<ApiReuseResult> =>
-  api(`/api/archive/${id}/reuse`, { method: 'POST' });
+export const reuseArchive = (
+  id: number,
+  body?: { named_list_id?: number; item_ids?: number[] },
+): Promise<ApiReuseResult> =>
+  api(`/api/archive/${id}/reuse`, { method: 'POST', body: JSON.stringify(body ?? {}) });
 export const deleteArchive = (id: number): Promise<{ deleted: boolean }> =>
   api(`/api/archive/${id}`, { method: 'DELETE' });
 export const setItemDoneApi = (id: number, done: boolean): Promise<ApiSetDoneResult> =>

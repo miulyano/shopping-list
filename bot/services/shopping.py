@@ -466,14 +466,24 @@ async def reuse_archive_list(
     db: aiosqlite.Connection,
     src_list_id: int,
     user_id: int,
+    named_list_id: Optional[int] = None,
+    item_ids: Optional[list[int]] = None,
 ) -> Optional[tuple[int, int]]:
     """Copy items from archived list into active list (creating it if needed).
+
+    ``item_ids`` — copy only this subset of the snapshot's items (all when None).
+    ``named_list_id`` — put every copied item into this named list (overrides the
+    per-item restore logic when given).
 
     Returns (active_list_id, added_count) or None if src archive not found.
     """
     src = await get_archive_list(db, src_list_id)
     if src is None:
         return None
+    items = src.items
+    if item_ids is not None:
+        wanted = set(item_ids)
+        items = [it for it in items if it.id in wanted]
     list_id = await ensure_active_list(db)
     row = await (await db.execute(
         "SELECT COALESCE(MAX(position), 0) AS p FROM items WHERE list_id=?", (list_id,)
@@ -483,10 +493,10 @@ async def reuse_archive_list(
     default = await default_named_list(db)
     default_id = default.id if default else None
     added = 0
-    for it in src.items:
-        # Restore each item to its native named list — fall back to the
-        # snapshot's tag, then the default list.
-        nl_id = it.named_list_id or src.named_list_id or default_id
+    for it in items:
+        # Honour an explicit destination; otherwise restore each item to its
+        # native named list, falling back to the snapshot's tag, then default.
+        nl_id = named_list_id or it.named_list_id or src.named_list_id or default_id
         await db.execute(
             "INSERT INTO items (list_id, name, qty, done, added_by, added_at, position, category, named_list_id) "
             "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",

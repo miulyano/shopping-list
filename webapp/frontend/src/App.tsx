@@ -298,7 +298,6 @@ export function App() {
         <ArchiveDetailScreen
           listId={openArchiveId}
           lists={lists}
-          hasActive={total > 0}
           onBack={() => setView('archive')}
           onAfterReuse={() => { setView('list'); refresh(); }}
           onAfterDelete={() => { setView('archive'); refresh(); }}
