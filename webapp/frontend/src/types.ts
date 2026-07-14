@@ -66,6 +66,17 @@ export interface ApiMoveResult {
   id: number;
   list_id: number;
   named_list_id: number;
+  archived: boolean;
+  /** Buckets archived by this move — target and/or source, zero to two. */
+  archived_named_list_ids: number[];
+}
+
+export interface ApiDeleteResult {
+  id: number;
+  list_id: number;
+  deleted: boolean;
+  archived: boolean;
+  archived_named_list_id: number | null;
 }
 
 export interface ApiReuseResult {
