@@ -283,8 +283,9 @@ async def test_delete_item_removes_row(db):
     state = await get_state(db)
     a_id = state.items[0].id
 
-    list_id = await delete_item(db, a_id)
+    list_id, archived = await delete_item(db, a_id)
     assert list_id == state.id
+    assert archived is None  # b remains unbought → nothing archived
 
     state2 = await get_state(db)
     assert [i.name for i in state2.items] == ["b"]

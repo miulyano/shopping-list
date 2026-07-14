@@ -124,23 +124,40 @@ async def resolve_target_list(
 
 async def move_item(
     db: aiosqlite.Connection, item_id: int, named_list_id: int
-) -> Optional[int]:
-    """Reassign an item to another named list. Returns list_id or None.
+) -> Optional[tuple[int, list[int]]]:
+    """Reassign an item to another named list.
 
-    Deliberately does NOT trigger auto-archive even if the source/target list
-    becomes fully bought — auto-archive happens only on an explicit check
-    (`set_item_done`), so moving never makes a list vanish into the archive.
+    Returns (list_id, archived_named_list_ids) or None if the item is not found
+    in the active list — items already living in an archived snapshot are left
+    untouched (re-archiving them would fragment the snapshot).
+    Moving can complete a bucket without a check, so auto-archive is re-run for
+    both the target (item just arrived) and the source (item just left) buckets;
+    each can archive independently (e.g. a stuck all-bought source drained by
+    the move), so `archived_named_list_ids` may hold zero, one or two entries.
     """
     row = await (await db.execute(
-        "SELECT list_id FROM items WHERE id=?", (item_id,)
+        "SELECT i.list_id, i.named_list_id FROM items i "
+        "JOIN lists l ON l.id = i.list_id "
+        "WHERE i.id=? AND l.status='active'",
+        (item_id,),
     )).fetchone()
     if not row:
         return None
+    list_id = row["list_id"]
+    source_named_list_id = row["named_list_id"]
     await db.execute(
         "UPDATE items SET named_list_id=? WHERE id=?", (named_list_id, item_id)
     )
+    archived: list[int] = []
+    target_archived = await archive_if_all_done(db, list_id, named_list_id)
+    if target_archived is not None:
+        archived.append(target_archived)
+    if source_named_list_id != named_list_id:
+        source_archived = await archive_if_all_done(db, list_id, source_named_list_id)
+        if source_archived is not None:
+            archived.append(source_archived)
     await db.commit()
-    return row["list_id"]
+    return list_id, archived
 
 
 async def get_active_list_id(db: aiosqlite.Connection) -> Optional[int]:
@@ -363,16 +380,31 @@ async def update_item(
     return row["list_id"]
 
 
-async def delete_item(db: aiosqlite.Connection, item_id: int) -> Optional[int]:
-    """Delete item. Returns list_id or None if item not found."""
+async def delete_item(
+    db: aiosqlite.Connection, item_id: int
+) -> Optional[tuple[int, Optional[int]]]:
+    """Delete an item.
+
+    Returns (list_id, archived_named_list_id) or None if the item is not found
+    in the active list — items already living in an archived snapshot are left
+    untouched (re-archiving them would fragment the snapshot).
+    Removing an unbought item can leave its bucket fully bought, so auto-archive
+    is re-run for that bucket; `archived_named_list_id` is the bucket that got
+    archived, or None.
+    """
     row = await (await db.execute(
-        "SELECT list_id FROM items WHERE id=?", (item_id,)
+        "SELECT i.list_id, i.named_list_id FROM items i "
+        "JOIN lists l ON l.id = i.list_id "
+        "WHERE i.id=? AND l.status='active'",
+        (item_id,),
     )).fetchone()
     if not row:
         return None
+    list_id = row["list_id"]
     await db.execute("DELETE FROM items WHERE id=?", (item_id,))
+    archived = await archive_if_all_done(db, list_id, row["named_list_id"])
     await db.commit()
-    return row["list_id"]
+    return list_id, archived
 
 
 async def get_archive_list(

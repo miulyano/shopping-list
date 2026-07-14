@@ -4,12 +4,17 @@ import { SF } from '../lib/constants';
 interface Props {
   done: number;
   total: number;
+  /** A toggle request or auto-archive flash is still in flight — the optimistic
+   * done===total may not match the server yet, so hold the manual archive
+   * button back to avoid racing the automatic archive. */
+  settling?: boolean;
   onArchivePurchased?: () => void;
 }
 
-export function Progress({ done, total, onArchivePurchased }: Props) {
+export function Progress({ done, total, settling, onArchivePurchased }: Props) {
   const pct = total === 0 ? 0 : (done / total) * 100;
-  const showArchive = done > 0 && done < total && typeof onArchivePurchased === 'function';
+  const showArchive =
+    done > 0 && (done < total || !settling) && typeof onArchivePurchased === 'function';
   return (
     <div style={{ padding: '0 22px 14px' }}>
       <div style={{

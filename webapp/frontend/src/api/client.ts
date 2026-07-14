@@ -2,6 +2,7 @@ import { tg } from '../lib/telegram';
 import type {
   ApiArchiveList,
   ApiArchivePurchasedResult,
+  ApiDeleteResult,
   ApiList,
   ApiMoveResult,
   ApiReuseResult,
@@ -44,9 +45,7 @@ export const patchItemApi = (
   body: { name: string; qty: string | null; category?: string },
 ): Promise<{ id: number; list_id: number; name: string; qty: string | null; category?: string }> =>
   api(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
-export const deleteItemApi = (
-  id: number,
-): Promise<{ id: number; list_id: number; deleted: boolean }> =>
+export const deleteItemApi = (id: number): Promise<ApiDeleteResult> =>
   api(`/api/items/${id}`, { method: 'DELETE' });
 export const moveItemApi = (id: number, namedListId: number): Promise<ApiMoveResult> =>
   api(`/api/items/${id}/move`, {

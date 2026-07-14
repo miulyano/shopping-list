@@ -209,19 +209,33 @@ async def move_item_endpoint(
     item_id: int, payload: ItemMove, _: int = Depends(current_user)
 ) -> dict:
     async with connect() as db:
-        list_id = await move_item(db, item_id, payload.named_list_id)
-    if list_id is None:
+        result = await move_item(db, item_id, payload.named_list_id)
+    if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
-    return {"id": item_id, "list_id": list_id, "named_list_id": payload.named_list_id}
+    list_id, archived_named_list_ids = result
+    return {
+        "id": item_id,
+        "list_id": list_id,
+        "named_list_id": payload.named_list_id,
+        "archived": bool(archived_named_list_ids),
+        "archived_named_list_ids": archived_named_list_ids,
+    }
 
 
 @router.delete("/items/{item_id}")
 async def remove_item(item_id: int, _: int = Depends(current_user)) -> dict:
     async with connect() as db:
-        list_id = await delete_item(db, item_id)
-    if list_id is None:
+        result = await delete_item(db, item_id)
+    if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item not found")
-    return {"id": item_id, "list_id": list_id, "deleted": True}
+    list_id, archived_named_list_id = result
+    return {
+        "id": item_id,
+        "list_id": list_id,
+        "deleted": True,
+        "archived": archived_named_list_id is not None,
+        "archived_named_list_id": archived_named_list_id,
+    }
 
 
 @router.post("/lists/{list_id}/archive-purchased")

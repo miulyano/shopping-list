@@ -60,6 +60,9 @@ export function App() {
   const [moving, setMoving] = useState<ApiItem | null>(null);
   const [confirmDeleteItem, setConfirmDeleteItem] = useState<ApiItem | null>(null);
   const [archivedFlash, setArchivedFlash] = useState(false);
+  // Reactive mirror of pendingItems.current.size — refs don't re-render, and
+  // Progress needs to hide the manual archive button while toggles settle.
+  const [pendingToggles, setPendingToggles] = useState(0);
   const lastIngestId = useRef<number | null>(null);
   const successHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Items currently in flight to /state — refresh() must not overwrite their
@@ -179,6 +182,7 @@ export function App() {
     if (pendingItems.current.has(id)) return;
 
     pendingItems.current.add(id);
+    setPendingToggles(pendingItems.current.size);
     try {
       while (desiredDone.current.has(id)) {
         const target = desiredDone.current.get(id)!;
@@ -216,6 +220,7 @@ export function App() {
       refresh();
     } finally {
       pendingItems.current.delete(id);
+      setPendingToggles(pendingItems.current.size);
     }
   };
 
@@ -237,6 +242,14 @@ export function App() {
     }
   };
 
+  const flashArchive = () => {
+    setArchivedFlash(true);
+    setTimeout(() => {
+      setArchivedFlash(false);
+      refresh();
+    }, 1400);
+  };
+
   const onMove = async (id: number, namedListId: number) => {
     setMoving(null);
     setOpenId(null);
@@ -246,10 +259,17 @@ export function App() {
       items: prev.items.map((it) => (it.id === id ? { ...it, named_list_id: namedListId } : it)),
     } : prev);
     try {
-      await moveItemApi(id, namedListId);
+      const r = await moveItemApi(id, namedListId);
+      pendingMoves.current.delete(id);
+      // Flash only when the bucket the user is looking at was archived —
+      // an off-screen destination archiving must not dim the current tab.
+      if (activeListId != null && r.archived_named_list_ids.includes(activeListId)) {
+        flashArchive();
+      } else {
+        refresh();
+      }
     } catch (e) {
       console.error('move failed', e);
-    } finally {
       pendingMoves.current.delete(id);
       refresh();
     }
@@ -258,7 +278,8 @@ export function App() {
   const onDeleteItem = async (id: number) => {
     setActive((prev) => prev ? { ...prev, items: prev.items.filter((it) => it.id !== id) } : prev);
     try {
-      await deleteItemApi(id);
+      const r = await deleteItemApi(id);
+      if (r.archived) flashArchive();
     } catch (e) {
       console.error('delete failed', e);
       refresh();
@@ -365,7 +386,12 @@ export function App() {
 
       {total > 0 && (
         <div style={{ paddingTop: 14 }}>
-          <Progress done={done} total={total} onArchivePurchased={onArchivePurchased}/>
+          <Progress
+            done={done}
+            total={total}
+            settling={pendingToggles > 0 || archivedFlash}
+            onArchivePurchased={onArchivePurchased}
+          />
         </div>
       )}
 

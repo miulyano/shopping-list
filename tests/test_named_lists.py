@@ -6,6 +6,7 @@ from bot.services.shopping import (
     add_items,
     archive_purchased,
     default_named_list,
+    delete_item,
     get_archive,
     get_named_lists,
     get_state,
@@ -141,6 +142,138 @@ async def test_move_item_does_not_autoarchive(db):
     item_d = (await get_state(db)).items[0].id
     await move_item(db, item_d, tata)
     assert len(await get_archive(db)) == before
+
+
+# ── auto-archive on move/delete (root-cause fix) ────────────────────────────
+
+@pytest.mark.asyncio
+async def test_move_done_item_into_bucket_autoarchives(db):
+    """Moving a bought item into a bucket that becomes fully bought archives it."""
+    general = await _named_list_id(db, "general")
+    maksim = await _named_list_id(db, "maksim")
+    await add_items(db, [ParsedItem("G1"), ParsedItem("G2")], user_id=111, named_list_id=general)
+    state = await get_state(db)
+    g1 = next(it for it in state.items if it.name == "g1")
+    await set_item_done(db, g1.id, user_id=111, done=True)  # general still has g2 → not archived
+    before = len(await get_archive(db))
+    await move_item(db, g1.id, maksim)  # maksim becomes {g1 done} → all bought
+    archive = await get_archive(db)
+    assert len(archive) == before + 1
+    snap = next(a for a in archive if a.named_list_id == maksim)
+    assert {i.name for i in snap.items} == {"g1"}
+    # g2 (unbought general) stays active; g1 gone from active
+    assert {i.name for i in (await get_state(db)).items} == {"g2"}
+
+
+@pytest.mark.asyncio
+async def test_move_out_last_undone_autoarchives_source(db):
+    """Moving the last unbought item OUT of a bucket archives the bought remainder."""
+    general = await _named_list_id(db, "general")
+    maksim = await _named_list_id(db, "maksim")
+    await add_items(db, [ParsedItem("G1"), ParsedItem("G2")], user_id=111, named_list_id=general)
+    state = await get_state(db)
+    g1 = next(it for it in state.items if it.name == "g1")
+    g2 = next(it for it in state.items if it.name == "g2")
+    await set_item_done(db, g1.id, user_id=111, done=True)  # general = {g1 done, g2 undone}
+    before = len(await get_archive(db))
+    await move_item(db, g2.id, maksim)  # general = {g1 done} → all bought
+    archive = await get_archive(db)
+    assert len(archive) == before + 1
+    snap = next(a for a in archive if a.named_list_id == general)
+    assert {i.name for i in snap.items} == {"g1"}
+    # g2 stays active under maksim
+    assert {i.name for i in (await get_state(db)).items} == {"g2"}
+
+
+@pytest.mark.asyncio
+async def test_delete_last_undone_autoarchives_bucket(db):
+    """Deleting the last unbought item leaves an all-bought bucket → archive."""
+    general = await _named_list_id(db, "general")
+    await add_items(db, [ParsedItem("G1"), ParsedItem("G2")], user_id=111, named_list_id=general)
+    state = await get_state(db)
+    g1 = next(it for it in state.items if it.name == "g1")
+    g2 = next(it for it in state.items if it.name == "g2")
+    await set_item_done(db, g1.id, user_id=111, done=True)
+    before = len(await get_archive(db))
+    await delete_item(db, g2.id)  # general = {g1 done} → all bought
+    archive = await get_archive(db)
+    assert len(archive) == before + 1
+    snap = next(a for a in archive if a.named_list_id == general)
+    assert {i.name for i in snap.items} == {"g1"}
+    assert (await get_state(db)) is None or (await get_state(db)).items == []
+
+
+@pytest.mark.asyncio
+async def test_delete_done_item_with_undone_sibling_no_archive(db):
+    """Deleting a bought item while an unbought sibling remains must not archive."""
+    general = await _named_list_id(db, "general")
+    await add_items(db, [ParsedItem("G1"), ParsedItem("G2")], user_id=111, named_list_id=general)
+    state = await get_state(db)
+    g1 = next(it for it in state.items if it.name == "g1")
+    await set_item_done(db, g1.id, user_id=111, done=True)  # general = {g1 done, g2 undone}
+    before = len(await get_archive(db))
+    await delete_item(db, g1.id)  # general = {g2 undone} → not all bought
+    assert len(await get_archive(db)) == before
+    assert {i.name for i in (await get_state(db)).items} == {"g2"}
+
+
+@pytest.mark.asyncio
+async def test_move_archives_both_buckets_when_both_complete(db):
+    """Legacy-stuck all-bought source + destination completed by the move:
+    BOTH buckets must archive, not just the destination."""
+    tata = await _named_list_id(db, "tata")
+    maksim = await _named_list_id(db, "maksim")
+    # Simulate a bucket left stuck by the pre-fix move behavior: two bought
+    # items sitting active (set_item_done would have archived them, so write
+    # the done flags directly).
+    await add_items(db, [ParsedItem("A"), ParsedItem("B")], user_id=111, named_list_id=tata)
+    await db.execute("UPDATE items SET done=1")
+    await db.commit()
+    state = await get_state(db)
+    b = next(it for it in state.items if it.name == "b")
+    before = len(await get_archive(db))
+    # Move bought B into empty maksim → maksim all-done AND tata remainder all-done.
+    result = await move_item(db, b.id, maksim)
+    assert result is not None
+    _, archived = result
+    assert set(archived) == {maksim, tata}
+    archive = await get_archive(db)
+    assert len(archive) == before + 2
+    by_tag = {a.named_list_id: {i.name for i in a.items} for a in archive}
+    assert by_tag[maksim] == {"b"}
+    assert by_tag[tata] == {"a"}
+    state2 = await get_state(db)
+    assert state2 is None or state2.items == []
+
+
+@pytest.mark.asyncio
+async def test_move_archived_item_rejected(db):
+    """Moving an item that already lives in an archived snapshot must be a no-op:
+    otherwise archive_if_all_done would fragment the existing snapshot."""
+    general = await _named_list_id(db, "general")
+    maksim = await _named_list_id(db, "maksim")
+    await add_items(db, [ParsedItem("G1")], user_id=111, named_list_id=general)
+    item_id = (await get_state(db)).items[0].id
+    await set_item_done(db, item_id, user_id=111, done=True)  # archives general
+    before = await get_archive(db)
+    assert await move_item(db, item_id, maksim) is None
+    after = await get_archive(db)
+    assert len(after) == len(before)
+    assert {i.name for i in after[0].items} == {"g1"}
+    assert after[0].items[0].named_list_id == general  # untouched
+
+
+@pytest.mark.asyncio
+async def test_delete_archived_item_rejected(db):
+    """Deleting an item out of an archived snapshot must be a no-op."""
+    general = await _named_list_id(db, "general")
+    await add_items(db, [ParsedItem("G1")], user_id=111, named_list_id=general)
+    item_id = (await get_state(db)).items[0].id
+    await set_item_done(db, item_id, user_id=111, done=True)  # archives general
+    assert await delete_item(db, item_id) is None
+    archive = await get_archive(db)
+    assert len(archive) == 1
+    assert {i.name for i in archive[0].items} == {"g1"}
 
 
 # ── per-list archiving isolation ────────────────────────────────────────────
